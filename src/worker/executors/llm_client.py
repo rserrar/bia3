@@ -3,18 +3,83 @@ from urllib import request as urlrequest
 from urllib.error import HTTPError
 
 
+def _extract_balanced_payload(text: str, start: int, opening: str, closing: str) -> str:
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+            continue
+        if char == opening:
+            depth += 1
+            continue
+        if char == closing:
+            depth -= 1
+            if depth == 0:
+                return text[start : index + 1]
+    raise RuntimeError("LLM JSON payload not closed")
+
+
+def _extract_first_json_payload(text: str) -> str:
+    object_start = text.find("{")
+    array_start = text.find("[")
+    starts = [index for index in [object_start, array_start] if index >= 0]
+    if not starts:
+        raise RuntimeError("LLM response does not contain JSON payload")
+    start = min(starts)
+    opening = text[start]
+    if opening not in "{[":
+        raise RuntimeError("LLM response does not contain JSON payload")
+    closing = "}" if opening == "{" else "]"
+    return _extract_balanced_payload(text, start, opening, closing)
+
+
 def _extract_json(text: str) -> dict:
     raw = text.strip()
     if raw.startswith("```"):
         raw = raw.strip("`")
         if raw.startswith("json"):
             raw = raw[4:]
-    start = raw.find("{")
-    end = raw.rfind("}")
-    if start >= 0 and end > start:
-        raw = raw[start : end + 1]
-    parsed = json.loads(raw)
+    extracted = _extract_first_json_payload(raw)
+    parsed = json.loads(extracted)
     return parsed if isinstance(parsed, dict) else {}
+
+
+def normalize_llm_candidate_payload(payload: dict) -> dict:
+    if not isinstance(payload, dict):
+        return {}
+
+    full = payload.get("model_definition_full") if isinstance(payload.get("model_definition_full"), dict) else None
+    summary = payload.get("model_definition_summary") if isinstance(payload.get("model_definition_summary"), dict) else None
+    if full and summary:
+        return {
+            "model_definition_full": full,
+            "model_definition_summary": summary,
+        }
+
+    proposal = payload.get("proposal") if isinstance(payload.get("proposal"), dict) else {}
+    model_definition = proposal.get("model_definition") if isinstance(proposal.get("model_definition"), dict) else None
+    if model_definition is None and isinstance(payload.get("architecture_definition"), dict):
+        model_definition = payload
+    if model_definition is not None:
+        return {
+            "model_definition_full": model_definition,
+            "model_definition_summary": {
+                "kind": "legacy_model_definition",
+                "source": "normalized_from_v2_style",
+            },
+        }
+    return {}
 
 
 def generate_candidate_via_openai(api_key: str, model: str, prompt: str, endpoint: str) -> dict:

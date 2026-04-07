@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any
 
 from src.shared.settings import load_settings
-from .llm_client import generate_candidate_via_openai
+from .llm_client import generate_candidate_via_openai, normalize_llm_candidate_payload
 from .v2_prompt_builder import V2PromptBuilder
 
 
@@ -83,8 +83,9 @@ def _candidate_from_llm(candidate_id: str, payload_context: dict[str, Any]) -> t
     except Exception as error:
         print(f"[WARN] LLM generation failed, fallback to baseline: {error}")
         return None
-    full = payload.get("model_definition_full") if isinstance(payload.get("model_definition_full"), dict) else None
-    summary = payload.get("model_definition_summary") if isinstance(payload.get("model_definition_summary"), dict) else None
+    normalized = normalize_llm_candidate_payload(payload)
+    full = normalized.get("model_definition_full") if isinstance(normalized.get("model_definition_full"), dict) else None
+    summary = normalized.get("model_definition_summary") if isinstance(normalized.get("model_definition_summary"), dict) else None
     if not full or not summary:
         return None
     full["model_id"] = candidate_id
