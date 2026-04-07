@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from urllib import request as urlrequest
 from urllib.error import HTTPError
 
@@ -121,3 +122,35 @@ def generate_candidate_via_openai(api_key: str, model: str, prompt: str, endpoin
         .get("content", "")
     )
     return _extract_json(str(message))
+
+
+def repair_model_definition_via_openai(
+    *,
+    api_key: str,
+    model: str,
+    endpoint: str,
+    model_definition_full: dict,
+    validation_error: str,
+    fix_prompt_file: str,
+) -> dict:
+    prompt_template = ""
+    try:
+        path = Path(fix_prompt_file)
+        if not path.is_absolute():
+            path = (Path(__file__).resolve().parents[3] / path).resolve()
+        if path.exists():
+            prompt_template = path.read_text(encoding="utf-8")
+    except Exception:
+        prompt_template = ""
+
+    if prompt_template.strip() == "":
+        prompt_template = (
+            "Repair this model definition JSON so it compiles in Keras and can run one smoke-fit batch. "
+            "Return only JSON with key model_definition_full."
+        )
+    prompt = (
+        prompt_template
+        .replace("{{validation_error}}", validation_error)
+        .replace("{{buggy_model_json}}", json.dumps(model_definition_full, ensure_ascii=False, indent=2))
+    )
+    return generate_candidate_via_openai(api_key=api_key, model=model, prompt=prompt, endpoint=endpoint)

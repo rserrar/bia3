@@ -18,6 +18,7 @@ class Settings:
     experiment_config_file: str
     llm_num_new_models: int
     llm_num_reference_models: int
+    fix_error_prompt_file: str
 
 
 def load_settings() -> Settings:
@@ -36,4 +37,5 @@ def load_settings() -> Settings:
         experiment_config_file=os.getenv("V3_LLM_EXPERIMENT_CONFIG_FILE", "config/experiment_config.json"),
         llm_num_new_models=int(os.getenv("V3_LLM_NUM_NEW_MODELS", "1")),
         llm_num_reference_models=int(os.getenv("V3_LLM_NUM_REFERENCE_MODELS", "3")),
+        fix_error_prompt_file=os.getenv("V3_LLM_FIX_ERROR_PROMPT_FILE", "prompts/fix_model_error.txt"),
     )

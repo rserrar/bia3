@@ -1,0 +1,13 @@
+Repara el model JSON perque sigui compilable i executable en Keras.
+
+Error detectat:
+{{validation_error}}
+
+Model actual:
+{{buggy_model_json}}
+
+Regles:
+- Retorna nomes JSON valid.
+- Inclou una clau `model_definition_full` amb arquitectura corregida.
+- Conserva l'objectiu funcional del model.
+- Assegura que `architecture_definition.used_inputs` i `output_heads` no quedin buits.

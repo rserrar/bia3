@@ -16,6 +16,7 @@ Repositori minim per executar workers Colab contra l'API V3.
      - `V3_LLM_PROMPT_TEMPLATE_FILE=prompts/generate_new_models.txt`
      - `V3_LLM_ARCHITECTURE_GUIDE_FILE=prompts/instruccions.md`
      - `V3_LLM_EXPERIMENT_CONFIG_FILE=config/experiment_config.json`
+     - `V3_LLM_FIX_ERROR_PROMPT_FILE=prompts/fix_model_error.txt`
 3. Executa:
 
 ```bash
