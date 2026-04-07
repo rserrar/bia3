@@ -1,0 +1,23 @@
+{
+  "input_features_config": [
+    {
+      "feature_name": "entrada_valors",
+      "total_columns": 16,
+      "is_mandatory_input": true,
+      "default_input_layer_name": "input_main",
+      "source_csv_key": "dataset_train",
+      "description": "Vector numeric principal per al model de prova"
+    }
+  ],
+  "output_targets_config": [
+    {
+      "target_name": "sortida_valors",
+      "total_columns": 1,
+      "is_mandatory_output": true,
+      "default_output_layer_name": "output_sortida_valors",
+      "loss_function": "mse",
+      "activation_output_layer": "linear",
+      "source_csv_key": "dataset_train"
+    }
+  ]
+}

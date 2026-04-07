@@ -13,6 +13,9 @@ Repositori minim per executar workers Colab contra l'API V3.
      - `V3_OPENAI_API_KEY=...`
      - `V3_OPENAI_MODEL=gpt-4o-mini`
      - `V3_OPENAI_ENDPOINT=https://api.openai.com/v1/chat/completions`
+     - `V3_LLM_PROMPT_TEMPLATE_FILE=prompts/generate_new_models.txt`
+     - `V3_LLM_ARCHITECTURE_GUIDE_FILE=prompts/instruccions.md`
+     - `V3_LLM_EXPERIMENT_CONFIG_FILE=config/experiment_config.json`
 3. Executa:
 
 ```bash
@@ -24,3 +27,4 @@ python scripts/run_worker.py
 - Aquest repo no inclou servidor ni controller.
 - El worker es "tonto": `claim -> execute -> report`.
 - `validate_candidate` fa compilacio/mini-fit real amb TensorFlow quan rep `model_definition_full`.
+- El prompt LLM reutilitza l'estructura de `V2PromptBuilder`.

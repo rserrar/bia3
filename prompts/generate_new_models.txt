@@ -1,0 +1,22 @@
+Genera {{num_new_models}} proposta/es de model en format JSON executable per Keras.
+
+Regles obligatories:
+- Retorna NOMES JSON valid, sense markdown.
+- Ha d'incloure les claus: model_definition_full i model_definition_summary.
+- model_definition_full ha de contenir architecture_definition.used_inputs, branches i output_heads.
+- Evita duplicar models recents i variants trivials.
+
+Inputs disponibles:
+{{available_inputs_description}}
+
+Outputs disponibles:
+{{available_outputs_description}}
+
+Models de referencia (max {{num_best_models_considered}}):
+{{best_performing_models_json}}
+
+Guia d'arquitectura:
+{{architecture_guide_content}}
+
+Genealogia i context:
+{{genealogy_case_studies}}
