@@ -67,8 +67,10 @@ def normalize_llm_candidate_payload(payload: dict) -> dict:
             "model_definition_summary": summary,
         }
 
-    proposal = payload.get("proposal") if isinstance(payload.get("proposal"), dict) else {}
-    model_definition = proposal.get("model_definition") if isinstance(proposal.get("model_definition"), dict) else None
+    proposal_raw = payload.get("proposal")
+    proposal = proposal_raw if isinstance(proposal_raw, dict) else {}
+    model_definition_raw = proposal.get("model_definition")
+    model_definition = model_definition_raw if isinstance(model_definition_raw, dict) else None
     if model_definition is None and isinstance(payload.get("architecture_definition"), dict):
         model_definition = payload
     if model_definition is not None:
@@ -83,6 +85,7 @@ def normalize_llm_candidate_payload(payload: dict) -> dict:
 
 
 def generate_candidate_via_openai(api_key: str, model: str, prompt: str, endpoint: str) -> dict:
+    print(f"[INFO] LLM request -> endpoint={endpoint} model={model}", flush=True)
     body = {
         "model": model,
         "messages": [
@@ -107,6 +110,7 @@ def generate_candidate_via_openai(api_key: str, model: str, prompt: str, endpoin
     try:
         with urlrequest.urlopen(req, timeout=60) as resp:
             content = resp.read().decode("utf-8")
+            print("[INFO] LLM response received", flush=True)
     except HTTPError as error:
         body = error.read().decode("utf-8", errors="ignore")
         raise RuntimeError(f"OpenAI HTTP {error.code}: {body}") from error

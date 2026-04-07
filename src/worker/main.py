@@ -53,9 +53,9 @@ def run_worker_loop() -> None:
 
     try:
         client.register(worker_payload)
-        print(f"[INFO] Worker registered: {settings.worker_id}")
+        print(f"[INFO] Worker registered: {settings.worker_id}", flush=True)
     except Exception as error:
-        print(f"[WARN] Worker register failed: {error}")
+        print(f"[WARN] Worker register failed: {error}", flush=True)
 
     idle_counter = 0
     while True:
@@ -71,7 +71,7 @@ def run_worker_loop() -> None:
                 retry_after = int(claim.get("retry_after_seconds", settings.worker_poll_seconds) or settings.worker_poll_seconds)
                 idle_counter += 1
                 if idle_counter % 6 == 0:
-                    print(f"[INFO] No task, waiting {retry_after}s")
+                    print(f"[INFO] No task, waiting {retry_after}s", flush=True)
                 time.sleep(max(1, retry_after))
                 continue
 
@@ -89,9 +89,11 @@ def run_worker_loop() -> None:
                 continue
 
             task_type = str(task.get("task_type", ""))
-            print(f"[INFO] Claimed task {task_id} ({task_type}) attempt={attempt}")
+            print(f"[INFO] Claimed task {task_id} ({task_type}) attempt={attempt}", flush=True)
 
+            print(f"[INFO] Sending start -> server task_id={task_id}", flush=True)
             client.start(task_id, {"worker_id": settings.worker_id})
+            print(f"[INFO] Sending heartbeat -> server task_id={task_id}", flush=True)
             client.heartbeat(task_id, {"worker_id": settings.worker_id, "progress": {"phase": "started"}})
 
             result = execute_task(task)
@@ -102,6 +104,7 @@ def run_worker_loop() -> None:
                     "error_message": "task failed",
                     "retryable": False,
                 }
+                print(f"[INFO] Sending fail -> server task_id={task_id}", flush=True)
                 client.fail(
                     task_id,
                     {
@@ -111,8 +114,9 @@ def run_worker_loop() -> None:
                         "error": error_payload,
                     },
                 )
-                print(f"[WARN] Task failed {task_id} ({task_type})")
+                print(f"[WARN] Task failed {task_id} ({task_type})", flush=True)
             else:
+                print(f"[INFO] Sending complete -> server task_id={task_id}", flush=True)
                 client.complete(
                     task_id,
                     {
@@ -122,9 +126,9 @@ def run_worker_loop() -> None:
                         "result": result,
                     },
                 )
-                print(f"[INFO] Task completed {task_id} ({task_type})")
+                print(f"[INFO] Task completed {task_id} ({task_type})", flush=True)
         except Exception as error:
-            print(f"[WARN] Worker loop error: {error}")
+            print(f"[WARN] Worker loop error: {error}", flush=True)
             time.sleep(settings.worker_poll_seconds)
 
 
