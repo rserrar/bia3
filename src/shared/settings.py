@@ -12,6 +12,7 @@ class Settings:
     llm_mode: str
     llm_api_key: str
     llm_model: str
+    llm_endpoint: str
 
 
 def load_settings() -> Settings:
@@ -24,4 +25,5 @@ def load_settings() -> Settings:
         llm_mode=os.getenv("V3_LLM_MODE", "off"),
         llm_api_key=os.getenv("V3_OPENAI_API_KEY", ""),
         llm_model=os.getenv("V3_OPENAI_MODEL", "gpt-4o-mini"),
+        llm_endpoint=os.getenv("V3_OPENAI_ENDPOINT", "https://api.openai.com/v1/chat/completions"),
     )

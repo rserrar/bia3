@@ -12,6 +12,7 @@ Repositori minim per executar workers Colab contra l'API V3.
      - `V3_LLM_MODE=openai_chat`
      - `V3_OPENAI_API_KEY=...`
      - `V3_OPENAI_MODEL=gpt-4o-mini`
+     - `V3_OPENAI_ENDPOINT=https://api.openai.com/v1/chat/completions`
 3. Executa:
 
 ```bash

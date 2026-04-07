@@ -1,5 +1,6 @@
 import json
 from urllib import request as urlrequest
+from urllib.error import HTTPError
 
 
 def _extract_json(text: str) -> dict:
@@ -16,7 +17,7 @@ def _extract_json(text: str) -> dict:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def generate_candidate_via_openai(api_key: str, model: str, prompt: str) -> dict:
+def generate_candidate_via_openai(api_key: str, model: str, prompt: str, endpoint: str) -> dict:
     body = {
         "model": model,
         "messages": [
@@ -30,7 +31,7 @@ def generate_candidate_via_openai(api_key: str, model: str, prompt: str) -> dict
     }
     data = json.dumps(body, ensure_ascii=False).encode("utf-8")
     req = urlrequest.Request(
-        url="https://api.openai.com/v1/chat/completions",
+        url=endpoint,
         data=data,
         method="POST",
         headers={
@@ -38,8 +39,12 @@ def generate_candidate_via_openai(api_key: str, model: str, prompt: str) -> dict
             "Authorization": f"Bearer {api_key}",
         },
     )
-    with urlrequest.urlopen(req, timeout=60) as resp:
-        content = resp.read().decode("utf-8")
+    try:
+        with urlrequest.urlopen(req, timeout=60) as resp:
+            content = resp.read().decode("utf-8")
+    except HTTPError as error:
+        body = error.read().decode("utf-8", errors="ignore")
+        raise RuntimeError(f"OpenAI HTTP {error.code}: {body}") from error
     payload = json.loads(content)
     message = (
         payload.get("choices", [{}])[0]

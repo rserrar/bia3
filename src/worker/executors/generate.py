@@ -45,11 +45,16 @@ def _candidate_from_llm(candidate_id: str) -> tuple[dict, dict] | None:
     settings = load_settings()
     if settings.llm_mode != "openai_chat" or settings.llm_api_key.strip() == "":
         return None
-    payload = generate_candidate_via_openai(
-        api_key=settings.llm_api_key,
-        model=settings.llm_model,
-        prompt=_llm_prompt(),
-    )
+    try:
+        payload = generate_candidate_via_openai(
+            api_key=settings.llm_api_key,
+            model=settings.llm_model,
+            prompt=_llm_prompt(),
+            endpoint=settings.llm_endpoint,
+        )
+    except Exception as error:
+        print(f"[WARN] LLM generation failed, fallback to baseline: {error}")
+        return None
     full = payload.get("model_definition_full") if isinstance(payload.get("model_definition_full"), dict) else None
     summary = payload.get("model_definition_summary") if isinstance(payload.get("model_definition_summary"), dict) else None
     if not full or not summary:
