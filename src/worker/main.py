@@ -53,9 +53,11 @@ def run_worker_loop() -> None:
 
     try:
         client.register(worker_payload)
+        print(f"[INFO] Worker registered: {settings.worker_id}")
     except Exception as error:
         print(f"[WARN] Worker register failed: {error}")
 
+    idle_counter = 0
     while True:
         try:
             claim = client.claim(
@@ -67,8 +69,13 @@ def run_worker_loop() -> None:
             action = str(claim.get("action", "wait"))
             if action != "task":
                 retry_after = int(claim.get("retry_after_seconds", settings.worker_poll_seconds) or settings.worker_poll_seconds)
+                idle_counter += 1
+                if idle_counter % 6 == 0:
+                    print(f"[INFO] No task, waiting {retry_after}s")
                 time.sleep(max(1, retry_after))
                 continue
+
+            idle_counter = 0
 
             task = claim.get("task") if isinstance(claim.get("task"), dict) else None
             if task is None:
@@ -80,6 +87,9 @@ def run_worker_loop() -> None:
             if task_id == "":
                 time.sleep(settings.worker_poll_seconds)
                 continue
+
+            task_type = str(task.get("task_type", ""))
+            print(f"[INFO] Claimed task {task_id} ({task_type}) attempt={attempt}")
 
             client.start(task_id, {"worker_id": settings.worker_id})
             client.heartbeat(task_id, {"worker_id": settings.worker_id, "progress": {"phase": "started"}})
@@ -101,6 +111,7 @@ def run_worker_loop() -> None:
                         "error": error_payload,
                     },
                 )
+                print(f"[WARN] Task failed {task_id} ({task_type})")
             else:
                 client.complete(
                     task_id,
@@ -111,6 +122,7 @@ def run_worker_loop() -> None:
                         "result": result,
                     },
                 )
+                print(f"[INFO] Task completed {task_id} ({task_type})")
         except Exception as error:
             print(f"[WARN] Worker loop error: {error}")
             time.sleep(settings.worker_poll_seconds)

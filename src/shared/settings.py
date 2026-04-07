@@ -9,6 +9,9 @@ class Settings:
     worker_version: str
     dataset_profile_id: str
     worker_poll_seconds: int
+    llm_mode: str
+    llm_api_key: str
+    llm_model: str
 
 
 def load_settings() -> Settings:
@@ -18,4 +21,7 @@ def load_settings() -> Settings:
         worker_version=os.getenv("V3_WORKER_VERSION", "0.1.0"),
         dataset_profile_id=os.getenv("V3_DATASET_PROFILE_ID", "default"),
         worker_poll_seconds=int(os.getenv("V3_WORKER_POLL_SECONDS", "5")),
+        llm_mode=os.getenv("V3_LLM_MODE", "off"),
+        llm_api_key=os.getenv("V3_OPENAI_API_KEY", ""),
+        llm_model=os.getenv("V3_OPENAI_MODEL", "gpt-4o-mini"),
     )
