@@ -55,11 +55,17 @@ def load_all_raw_data_sources(
     for csv_key in keys_to_load:
         file_name = str(data_paths_config.get(csv_key, "")).strip()
         if file_name == "":
+            _log(f"source_csv_key sense fitxer: {csv_key}")
             loaded_data[csv_key] = np.array([], dtype=np.float32)
             continue
         file_path = os.path.join(base_data_dir, file_name)
         dtype_norm = "float16" if cache_dtype == "float16" else "float32"
         npy_path = file_path + (".fp16.npy" if dtype_norm == "float16" else ".npy")
+
+        if not os.path.exists(file_path):
+            _log(f"csv no trobat per key={csv_key}: {file_path}")
+            loaded_data[csv_key] = np.array([], dtype=np.float32)
+            continue
 
         try:
             if os.path.exists(npy_path) and os.path.exists(file_path) and os.path.getmtime(npy_path) >= os.path.getmtime(file_path):
@@ -97,7 +103,8 @@ def load_all_raw_data_sources(
                     np.save(npy_path, arr)
                 except Exception:
                     pass
-            except Exception:
+            except Exception as error:
+                _log(f"error carregant csv key={csv_key} file={file_path}: {error}")
                 loaded_data[csv_key] = np.array([], dtype=np.float32)
 
     _log(f"fonts carregades: {len(loaded_data)} arrays ~{round(total_loaded_mb, 2)}MB")
