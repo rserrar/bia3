@@ -1,27 +1,209 @@
 {
-  "data_dir": "data",
+  "experiment_name": "Borsa_IA_Opt_v0_2",
+  "initial_models_dir": "models/base/",
+  "max_execution_time_hours": 1,
+  "data_dir": "data/min",
   "data_paths": {
-    "dataset_train": "dataset_train.csv"
+    "entrada_valors": "entrada_valors.csv",
+    "entrada_extra": "entrada_extra.csv",
+    "min_historics": "min.csv",
+    "max_historics": "max.csv",
+    "entrada_valors_ultim_csv_col": 799,
+    "sortida_min_7d": "sortida_min.csv",
+    "sortida_max_7d": "sortida_max.csv",
+    "sortida_tb": "sortida_tb.csv",
+    "sortida_sl": "sortida_sl.csv",
+    "sortida_sn": "sortida_sn.csv",
+    "sortida_valors_7d": "sortida_valors.csv",
+    "sortida_valors_100d_anteriors_slice_from_entrada_valors": [
+      -100,
+      null
+    ]
+  },
+  "evaluator_params": {
+    "epochs_per_eval": 10,
+    "batch_size": 64,
+    "early_stopping_patience": 10,
+    "reduce_lr_patience": 5,
+    "reduce_lr_factor": 0.2,
+    "max_training_time_per_model_seconds": 60,
+    "validation_split": 0.15,
+    "test_split": 0.1
+  },
+  "model_generator_params": {
+    "num_new_models_per_iteration": 3,
+    "num_best_models_to_consider": 3,
+    "max_llm_call_retries": 2
+  },
+  "validator_params": {
+    "max_correction_attempts": 3
   },
   "input_features_config": [
     {
-      "feature_name": "entrada_valors",
-      "total_columns": 16,
+      "feature_name": "prices_hist_full_800",
+      "source_csv_key": "entrada_valors",
+      "total_columns": 800,
+      "slice_params": null,
+      "is_mandatory_input": false,
+      "default_input_layer_name": "input_prices_full_800",
+      "description": "Els 800 preus de tancament historics mes recents de l'accio."
+    },
+    {
+      "feature_name": "prices_hist_main_700",
+      "source_csv_key": "entrada_valors",
+      "total_columns": 700,
+      "slice_params": [
+        null,
+        700
+      ],
+      "is_mandatory_input": false,
+      "default_input_layer_name": "input_prices_main_700",
+      "description": "Els primers 700 preus de la sequencia historica de 800 dies."
+    },
+    {
+      "feature_name": "prices_hist_last_100",
+      "source_csv_key": "entrada_valors",
+      "total_columns": 100,
+      "slice_params": [
+        -100,
+        null
+      ],
+      "is_mandatory_input": false,
+      "default_input_layer_name": "input_prices_last_100",
+      "description": "Els ultims 100 preus de la sequencia historica de 800 dies."
+    },
+    {
+      "feature_name": "extra_data_details",
+      "source_csv_key": "entrada_extra",
+      "total_columns": 9,
+      "slice_params": null,
       "is_mandatory_input": true,
-      "default_input_layer_name": "input_main",
-      "source_csv_key": "dataset_train",
-      "description": "Vector numeric principal per al model de prova"
+      "default_input_layer_name": "input_extra_data",
+      "description": "Dades addicionals de l'empresa."
+    },
+    {
+      "feature_name": "min_prices_hist_800",
+      "source_csv_key": "min_historics",
+      "total_columns": 800,
+      "slice_params": null,
+      "is_mandatory_input": false,
+      "default_input_layer_name": "input_min_hist_800",
+      "description": "Els 800 valors minims diaris historics."
+    },
+    {
+      "feature_name": "max_prices_hist_800",
+      "source_csv_key": "max_historics",
+      "total_columns": 800,
+      "slice_params": null,
+      "is_mandatory_input": false,
+      "default_input_layer_name": "input_max_hist_800",
+      "description": "Els 800 valors maxims diaris historics."
+    },
+    {
+      "feature_name": "last_closing_price_feature",
+      "source_csv_key": "entrada_valors",
+      "derive_last_value_from_col": 799,
+      "total_columns": 1,
+      "is_mandatory_input": false,
+      "default_input_layer_name": "input_last_price",
+      "description": "L'ultim preu de tancament de la sequencia historica de 800 dies."
     }
   ],
   "output_targets_config": [
     {
-      "target_name": "sortida_valors",
+      "target_name": "stop_loss_prediction",
+      "source_csv_key": "sortida_sl",
       "total_columns": 1,
       "is_mandatory_output": true,
-      "default_output_layer_name": "output_sortida_valors",
-      "loss_function": "mse",
+      "default_output_layer_name": "output_stop_loss",
+      "loss_function": "mean_squared_error",
       "activation_output_layer": "linear",
-      "source_csv_key": "dataset_train"
+      "metrics": [
+        "mean_absolute_error"
+      ],
+      "description": "Prediccio del valor optim per a l'stop loss del dia seguent."
+    },
+    {
+      "target_name": "take_profit_prediction",
+      "source_csv_key": "sortida_tb",
+      "total_columns": 1,
+      "is_mandatory_output": true,
+      "default_output_layer_name": "output_take_profit",
+      "loss_function": "mean_squared_error",
+      "activation_output_layer": "linear",
+      "metrics": [
+        "mean_absolute_error"
+      ],
+      "description": "Prediccio del preu optim per vendre (take profit) el dia seguent."
+    },
+    {
+      "target_name": "min_7_days_prediction",
+      "source_csv_key": "sortida_min_7d",
+      "total_columns": 7,
+      "is_mandatory_output": false,
+      "default_output_layer_name": "output_min_7",
+      "loss_function": "mean_squared_error",
+      "activation_output_layer": "linear",
+      "metrics": [
+        "mean_absolute_error"
+      ],
+      "description": "Prediccio dels preus minims diaris per als proxims 7 dies."
+    },
+    {
+      "target_name": "max_7_days_prediction",
+      "source_csv_key": "sortida_max_7d",
+      "total_columns": 7,
+      "is_mandatory_output": false,
+      "default_output_layer_name": "output_max_7",
+      "loss_function": "mean_squared_error",
+      "activation_output_layer": "linear",
+      "metrics": [
+        "mean_absolute_error"
+      ],
+      "description": "Prediccio dels preus maxims diaris per als proxims 7 dies."
+    },
+    {
+      "target_name": "price_change_metrics_4_vals",
+      "source_csv_key": "sortida_sn",
+      "total_columns": 4,
+      "is_mandatory_output": false,
+      "default_output_layer_name": "output_price_change_metrics",
+      "loss_function": "mean_squared_error",
+      "activation_output_layer": "linear",
+      "metrics": [
+        "mean_absolute_error"
+      ],
+      "description": "Prediccio de 4 metriques de canvi de preu."
+    },
+    {
+      "target_name": "closing_prices_7_days_prediction",
+      "source_csv_key": "sortida_valors_7d",
+      "total_columns": 7,
+      "is_mandatory_output": false,
+      "default_output_layer_name": "output_valors_7",
+      "loss_function": "mean_squared_error",
+      "activation_output_layer": "linear",
+      "metrics": [
+        "mean_absolute_error"
+      ],
+      "description": "Prediccio dels preus de tancament per als proxims 7 dies."
+    },
+    {
+      "target_name": "reconstruct_prices_last_100_target",
+      "source_csv_key": "entrada_valors",
+      "derive_target_slice_params": [
+        -100,
+        null
+      ],
+      "total_columns": 100,
+      "is_mandatory_output": false,
+      "default_output_layer_name": "output_hist_100_reconstruction",
+      "loss_function": "mean_squared_error",
+      "activation_output_layer": "linear",
+      "metrics": [
+        "mean_absolute_error"
+      ],
+      "description": "Sortida per reconstruir/comprovar la interpretacio dels ultims 100 preus historics."
     }
   ]
 }

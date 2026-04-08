@@ -1,1 +1,4 @@
-# stdlib-only worker at this stage
+numpy>=1.24
+pandas>=2.0
+tensorflow>=2.15
+pydot>=1.4
