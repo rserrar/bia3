@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import tempfile
 import gc
+from pathlib import Path
 from typing import Any
 
 import numpy as np
