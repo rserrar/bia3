@@ -166,16 +166,25 @@ def run_smoke_fit_real_data(
     output_heads = arch.get("output_heads") if isinstance(arch.get("output_heads"), list) else []
 
     output_cfg_map: dict[str, int] = {}
+    output_alias_to_target: dict[str, str] = {}
     for item in output_cfg:
         if not isinstance(item, dict):
             continue
         target_name = str(item.get("target_name", "")).strip()
         layer_name = str(item.get("default_output_layer_name", "")).strip()
+        source_csv_key = str(item.get("source_csv_key", "")).strip()
         cols = max(1, int(item.get("total_columns", 1) or 1))
         if target_name:
             output_cfg_map[target_name] = cols
+            output_alias_to_target[target_name] = target_name
         if layer_name:
             output_cfg_map[layer_name] = cols
+            if target_name:
+                output_alias_to_target[layer_name] = target_name
+        if source_csv_key:
+            output_cfg_map[source_csv_key] = cols
+            if target_name:
+                output_alias_to_target[source_csv_key] = target_name
 
     for inp in used_inputs:
         if not isinstance(inp, dict):
@@ -226,6 +235,9 @@ def run_smoke_fit_real_data(
         maps_to = str(head.get("maps_to_target_config_name", "")).strip()
         out_name = str(head.get("output_layer_name", "")).strip()
         target_name = maps_to or out_name
+        canonical_target = output_alias_to_target.get(target_name, target_name)
+        if canonical_target != target_name:
+            target_name = canonical_target
         arr = all_data.get(target_name)
         if not isinstance(arr, np.ndarray) or arr.size == 0:
             raise RuntimeError(f"missing real target data for target: {target_name}")
