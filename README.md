@@ -40,6 +40,7 @@ drive.mount('/content/drive')
 
 %cd /content/bia3
 !python scripts/colab_prepare_drive_zip.py
+!python scripts/colab_preflight_data.py
 ```
 
 2) Definir variables d'entorn segons el resum del script:
