@@ -19,6 +19,9 @@ class Settings:
     llm_num_new_models: int
     llm_num_reference_models: int
     fix_error_prompt_file: str
+    real_data_mode: bool
+    data_dir: str
+    max_real_rows: int
 
 
 def load_settings() -> Settings:
@@ -38,4 +41,7 @@ def load_settings() -> Settings:
         llm_num_new_models=int(os.getenv("V3_LLM_NUM_NEW_MODELS", "1")),
         llm_num_reference_models=int(os.getenv("V3_LLM_NUM_REFERENCE_MODELS", "3")),
         fix_error_prompt_file=os.getenv("V3_LLM_FIX_ERROR_PROMPT_FILE", "prompts/fix_model_error.txt"),
+        real_data_mode=os.getenv("V3_REAL_DATA_MODE", "false").lower() in {"1", "true", "yes"},
+        data_dir=os.getenv("V3_DATA_DIR", "data"),
+        max_real_rows=int(os.getenv("V3_MAX_REAL_ROWS", "4096")),
     )

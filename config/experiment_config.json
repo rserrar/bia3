@@ -1,4 +1,8 @@
 {
+  "data_dir": "data",
+  "data_paths": {
+    "dataset_train": "dataset_train.csv"
+  },
   "input_features_config": [
     {
       "feature_name": "entrada_valors",

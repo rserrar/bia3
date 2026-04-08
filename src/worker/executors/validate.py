@@ -2,7 +2,7 @@ from typing import Any, cast
 
 from src.shared.settings import load_settings
 from .llm_client import normalize_llm_candidate_payload, repair_model_definition_via_openai
-from .model_runtime import run_smoke_fit
+from .model_runtime import run_smoke_fit, run_smoke_fit_real_data
 
 
 def execute_validate_candidate(payload: dict) -> dict:
@@ -20,12 +20,23 @@ def execute_validate_candidate(payload: dict) -> dict:
 
     if not force_fail:
         try:
-            smoke_result = run_smoke_fit(
-                model_definition_full=model_definition_full,
-                smoke_batches=int(payload.get("smoke_batches", 3) or 3),
-                feature_dim=int(payload.get("feature_dim", 16) or 16),
-                batch_size=int(payload.get("batch_size", 8) or 8),
-            )
+            settings = load_settings()
+            use_real_data = bool(payload.get("use_real_data", settings.real_data_mode))
+            if use_real_data:
+                smoke_result = run_smoke_fit_real_data(
+                    model_definition_full=model_definition_full,
+                    experiment_config_file=settings.experiment_config_file,
+                    base_data_dir=settings.data_dir,
+                    max_rows=int(payload.get("max_real_rows", settings.max_real_rows) or settings.max_real_rows),
+                    batch_size=int(payload.get("batch_size", 8) or 8),
+                )
+            else:
+                smoke_result = run_smoke_fit(
+                    model_definition_full=model_definition_full,
+                    smoke_batches=int(payload.get("smoke_batches", 3) or 3),
+                    feature_dim=int(payload.get("feature_dim", 16) or 16),
+                    batch_size=int(payload.get("batch_size", 8) or 8),
+                )
             compile_ok = True
             smoke_ok = True
         except Exception as error:
@@ -49,12 +60,22 @@ def execute_validate_candidate(payload: dict) -> dict:
                 repaired_raw = normalized.get("model_definition_full")
                 repaired_full = cast(dict[str, Any], repaired_raw) if isinstance(repaired_raw, dict) else None
                 if repaired_full:
-                    smoke_result = run_smoke_fit(
-                        model_definition_full=repaired_full,
-                        smoke_batches=int(payload.get("smoke_batches", 3) or 3),
-                        feature_dim=int(payload.get("feature_dim", 16) or 16),
-                        batch_size=int(payload.get("batch_size", 8) or 8),
-                    )
+                    use_real_data = bool(payload.get("use_real_data", settings.real_data_mode))
+                    if use_real_data:
+                        smoke_result = run_smoke_fit_real_data(
+                            model_definition_full=repaired_full,
+                            experiment_config_file=settings.experiment_config_file,
+                            base_data_dir=settings.data_dir,
+                            max_rows=int(payload.get("max_real_rows", settings.max_real_rows) or settings.max_real_rows),
+                            batch_size=int(payload.get("batch_size", 8) or 8),
+                        )
+                    else:
+                        smoke_result = run_smoke_fit(
+                            model_definition_full=repaired_full,
+                            smoke_batches=int(payload.get("smoke_batches", 3) or 3),
+                            feature_dim=int(payload.get("feature_dim", 16) or 16),
+                            batch_size=int(payload.get("batch_size", 8) or 8),
+                        )
                     compile_ok = True
                     smoke_ok = True
                     error_message = None

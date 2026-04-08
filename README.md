@@ -17,6 +17,11 @@ Repositori minim per executar workers Colab contra l'API V3.
      - `V3_LLM_ARCHITECTURE_GUIDE_FILE=prompts/instruccions.md`
      - `V3_LLM_EXPERIMENT_CONFIG_FILE=config/experiment_config.json`
      - `V3_LLM_FIX_ERROR_PROMPT_FILE=prompts/fix_model_error.txt`
+     - entrenament amb dades reals:
+       - `V3_REAL_DATA_MODE=true`
+       - `V3_DATA_DIR=/content/drive/MyDrive/.../data`
+       - `V3_MAX_REAL_ROWS=4096`
+       - posar CSVs segons `config/experiment_config.json` (`data_paths`)
 3. Executa:
 
 ```bash
@@ -29,3 +34,4 @@ python scripts/run_worker.py
 - El worker es "tonto": `claim -> execute -> report`.
 - `validate_candidate` fa compilacio/mini-fit real amb TensorFlow quan rep `model_definition_full`.
 - El prompt LLM reutilitza l'estructura de `V2PromptBuilder`.
+- Amb `V3_REAL_DATA_MODE=true`, `validate/train` reutilitzen el pipeline de càrrega CSV de V2 (cache `.npy` + derivacions).

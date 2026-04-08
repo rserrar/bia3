@@ -1,7 +1,8 @@
 from uuid import uuid4
 import time
 
-from .model_runtime import run_smoke_fit, render_model_plot_png_base64
+from src.shared.settings import load_settings
+from .model_runtime import run_smoke_fit, run_smoke_fit_real_data, render_model_plot_png_base64
 
 
 def execute_train_continue(payload: dict) -> dict:
@@ -16,12 +17,23 @@ def execute_train_continue(payload: dict) -> dict:
     model_definition_full = payload.get("model_definition_full") if isinstance(payload.get("model_definition_full"), dict) else {}
     if model_definition_full:
         try:
-            smoke = run_smoke_fit(
-                model_definition_full=model_definition_full,
-                smoke_batches=int(payload.get("train_smoke_batches", 4) or 4),
-                feature_dim=int(payload.get("feature_dim", 16) or 16),
-                batch_size=int(payload.get("batch_size", 16) or 16),
-            )
+            settings = load_settings()
+            use_real_data = bool(payload.get("use_real_data", settings.real_data_mode))
+            if use_real_data:
+                smoke = run_smoke_fit_real_data(
+                    model_definition_full=model_definition_full,
+                    experiment_config_file=settings.experiment_config_file,
+                    base_data_dir=settings.data_dir,
+                    max_rows=int(payload.get("max_real_rows", settings.max_real_rows) or settings.max_real_rows),
+                    batch_size=int(payload.get("batch_size", 16) or 16),
+                )
+            else:
+                smoke = run_smoke_fit(
+                    model_definition_full=model_definition_full,
+                    smoke_batches=int(payload.get("train_smoke_batches", 4) or 4),
+                    feature_dim=int(payload.get("feature_dim", 16) or 16),
+                    batch_size=int(payload.get("batch_size", 16) or 16),
+                )
             kpis["val_loss"] = float(smoke.get("loss", kpis["val_loss"]))
             kpis["val_mae"] = float(smoke.get("mae", kpis["val_mae"]))
         except Exception as error:

@@ -6,6 +6,12 @@ from typing import Any
 
 import numpy as np
 
+from .data_pipeline_v2 import (
+    derive_additional_features_and_targets,
+    load_all_raw_data_sources,
+    load_experiment_config,
+)
+
 
 def _tf():
     import tensorflow as tf
@@ -100,3 +106,69 @@ def render_model_plot_png_base64(model_definition_full: dict[str, Any], feature_
         except Exception:
             pass
         return None
+
+
+def run_smoke_fit_real_data(
+    model_definition_full: dict[str, Any],
+    *,
+    experiment_config_file: str,
+    base_data_dir: str,
+    max_rows: int = 4096,
+    batch_size: int = 16,
+) -> dict[str, Any]:
+    tf = _tf()
+    exp = load_experiment_config(experiment_config_file)
+    input_cfg = exp.get("input_features_config") if isinstance(exp.get("input_features_config"), list) else []
+    output_cfg = exp.get("output_targets_config") if isinstance(exp.get("output_targets_config"), list) else []
+    data_paths = exp.get("data_paths") if isinstance(exp.get("data_paths"), dict) else {}
+
+    raw = load_all_raw_data_sources(data_paths, input_cfg, output_cfg, base_data_dir=base_data_dir)
+    all_data = derive_additional_features_and_targets(raw, input_cfg, output_cfg)
+
+    model, input_names, _ = build_keras_model(model_definition_full, feature_dim=16)
+    arch = model_definition_full.get("architecture_definition") if isinstance(model_definition_full.get("architecture_definition"), dict) else {}
+    used_inputs = arch.get("used_inputs") if isinstance(arch.get("used_inputs"), list) else []
+    output_heads = arch.get("output_heads") if isinstance(arch.get("output_heads"), list) else []
+
+    x_data: dict[str, np.ndarray] = {}
+    y_list: list[np.ndarray] = []
+
+    for idx, input_name in enumerate(input_names):
+        source_feature_name = input_name
+        if idx < len(used_inputs) and isinstance(used_inputs[idx], dict):
+            source_feature_name = str(used_inputs[idx].get("source_feature_name", input_name))
+        arr = all_data.get(source_feature_name)
+        if not isinstance(arr, np.ndarray) or arr.size == 0:
+            raise RuntimeError(f"missing real input data for feature: {source_feature_name}")
+        x_data[input_name] = arr.astype("float32")
+
+    for head in output_heads:
+        if not isinstance(head, dict):
+            continue
+        maps_to = str(head.get("maps_to_target_config_name", "")).strip()
+        out_name = str(head.get("output_layer_name", "")).strip()
+        target_name = maps_to or out_name
+        arr = all_data.get(target_name)
+        if not isinstance(arr, np.ndarray) or arr.size == 0:
+            raise RuntimeError(f"missing real target data for target: {target_name}")
+        y_list.append(arr.astype("float32"))
+
+    if not y_list:
+        raise RuntimeError("no real targets found for output_heads")
+
+    lengths = [arr.shape[0] for arr in list(x_data.values()) + y_list if isinstance(arr, np.ndarray) and arr.ndim >= 2]
+    if not lengths:
+        raise RuntimeError("real data arrays are empty")
+    n = min(min(lengths), max(8, int(max_rows)))
+
+    x_fit = {k: v[:n] for k, v in x_data.items()}
+    if len(y_list) == 1 and len(model.outputs) == 1:
+        y_fit: Any = y_list[0][:n]
+    else:
+        y_fit = [arr[:n] for arr in y_list]
+
+    history = model.fit(x_fit, y_fit, epochs=1, batch_size=batch_size, verbose=0)
+    tf.keras.backend.clear_session()
+    loss = float(history.history.get("loss", [0.0])[-1]) if history.history else 0.0
+    mae = float(history.history.get("mae", [0.0])[-1]) if history.history else 0.0
+    return {"loss": loss, "mae": mae, "samples": n}
