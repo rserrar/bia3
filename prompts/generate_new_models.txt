@@ -4,6 +4,9 @@ Regles obligatories:
 - Retorna NOMES JSON valid, sense markdown.
 - Ha d'incloure les claus: model_definition_full i model_definition_summary.
 - model_definition_full ha de contenir architecture_definition.used_inputs, branches i output_heads.
+- `architecture_definition.used_inputs` ha de ser una LLISTA DE DICCIONARIS amb `input_layer_name` i `source_feature_name`.
+- Cada element de `architecture_definition.output_heads` ha de tenir `output_layer_name` i `maps_to_target_config_name`.
+- `maps_to_target_config_name` ha de coincidir EXACTAMENT amb un target disponible (no inventar noms): {{allowed_target_names_csv}}
 - Evita duplicar models recents i variants trivials.
 
 Inputs disponibles:

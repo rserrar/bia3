@@ -37,6 +37,7 @@ class V2PromptBuilder:
         prompt = prompt.replace("{{num_new_models}}", str(self.num_new_models))
         prompt = prompt.replace("{{available_inputs_description}}", inputs_desc)
         prompt = prompt.replace("{{available_outputs_description}}", outputs_desc)
+        prompt = prompt.replace("{{allowed_target_names_csv}}", self._allowed_target_names_csv(experiment))
         prompt = prompt.replace("{{num_best_models_considered}}", str(len(reference_models)))
         prompt = prompt.replace("{{best_performing_models_json}}", json.dumps(reference_models, ensure_ascii=False, indent=2))
         prompt = prompt.replace("{{architecture_guide_content}}", self._combined_architecture_guide(architecture_guide))
@@ -106,6 +107,18 @@ class V2PromptBuilder:
             entries.append(f"- target_name={target} · cols={cols} · mandatory={mandatory} · default_output_layer_name={layer} · loss={loss} · activation={activation} · csv={source_csv}")
         return "\n".join(entries) if entries else "No output targets config available."
 
+    def _allowed_target_names_csv(self, experiment: dict[str, Any]) -> str:
+        names: list[str] = []
+        for item in experiment.get("output_targets_config", []):
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("target_name", "")).strip()
+            if name != "":
+                names.append(name)
+        if not names:
+            return "(no targets configured)"
+        return ", ".join(names)
+
     def _combined_architecture_guide(self, static_guide: str) -> str:
         parts = []
         if static_guide.strip() != "":
@@ -119,6 +132,9 @@ class V2PromptBuilder:
         parts = [
             "### EXEMPLES D'ARQUITECTURES JSON FUNCIONALS",
             "Utilitza aquests exemples com a referència per a l'estructura correcta del JSON, connexions i output_heads.",
+            "#### Estructura correcta per a `used_inputs` (MOLT IMPORTANT)",
+            "`used_inputs` ha de ser una LLISTA DE DICCIONARIS. Cada element ha de definir `input_layer_name`, `source_feature_name` i `shape`.",
+            "```json\n{\n  \"architecture_definition\": {\n    \"used_inputs\": [\n      {\n        \"input_layer_name\": \"input_prices_last_100\",\n        \"source_feature_name\": \"prices_hist_last_100\",\n        \"shape\": [100]\n      }\n    ]\n  }\n}\n```",
         ]
         example_patterns = [
             self.repo_root / "models" / "test" / "*.json",
