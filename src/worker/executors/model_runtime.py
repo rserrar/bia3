@@ -167,6 +167,16 @@ def run_smoke_fit_real_data(
 
     output_cfg_map: dict[str, int] = {}
     output_alias_to_target: dict[str, str] = {}
+    data_path_alias_to_source: dict[str, str] = {}
+    for source_key, file_name in data_paths.items():
+        if not isinstance(source_key, str) or not isinstance(file_name, str):
+            continue
+        base = Path(file_name).name
+        stem = Path(base).stem
+        if stem:
+            data_path_alias_to_source[stem] = source_key
+        if base:
+            data_path_alias_to_source[base] = source_key
     for item in output_cfg:
         if not isinstance(item, dict):
             continue
@@ -239,6 +249,9 @@ def run_smoke_fit_real_data(
         if canonical_target != target_name:
             target_name = canonical_target
         arr = all_data.get(target_name)
+        if (not isinstance(arr, np.ndarray) or arr.size == 0) and target_name in data_path_alias_to_source:
+            source_key = data_path_alias_to_source[target_name]
+            arr = all_data.get(source_key)
         if not isinstance(arr, np.ndarray) or arr.size == 0:
             raise RuntimeError(f"missing real target data for target: {target_name}")
         y_list.append(_sanitize_real_array(arr, f"target:{target_name}"))
