@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import tempfile
+import gc
 from typing import Any
 
 import numpy as np
@@ -115,6 +116,8 @@ def run_smoke_fit_real_data(
     base_data_dir: str,
     max_rows: int = 4096,
     batch_size: int = 16,
+    cache_dtype: str = "float32",
+    use_memmap_cache: bool = True,
 ) -> dict[str, Any]:
     tf = _tf()
     exp = load_experiment_config(experiment_config_file)
@@ -122,7 +125,14 @@ def run_smoke_fit_real_data(
     output_cfg = exp.get("output_targets_config") if isinstance(exp.get("output_targets_config"), list) else []
     data_paths = exp.get("data_paths") if isinstance(exp.get("data_paths"), dict) else {}
 
-    raw = load_all_raw_data_sources(data_paths, input_cfg, output_cfg, base_data_dir=base_data_dir)
+    raw = load_all_raw_data_sources(
+        data_paths,
+        input_cfg,
+        output_cfg,
+        base_data_dir=base_data_dir,
+        cache_dtype=cache_dtype,
+        use_memmap_cache=use_memmap_cache,
+    )
     all_data = derive_additional_features_and_targets(raw, input_cfg, output_cfg)
 
     model, input_names, _ = build_keras_model(model_definition_full, feature_dim=16)
@@ -140,7 +150,7 @@ def run_smoke_fit_real_data(
         arr = all_data.get(source_feature_name)
         if not isinstance(arr, np.ndarray) or arr.size == 0:
             raise RuntimeError(f"missing real input data for feature: {source_feature_name}")
-        x_data[input_name] = arr.astype("float32")
+        x_data[input_name] = arr.astype("float32", copy=False)
 
     for head in output_heads:
         if not isinstance(head, dict):
@@ -151,7 +161,7 @@ def run_smoke_fit_real_data(
         arr = all_data.get(target_name)
         if not isinstance(arr, np.ndarray) or arr.size == 0:
             raise RuntimeError(f"missing real target data for target: {target_name}")
-        y_list.append(arr.astype("float32"))
+        y_list.append(arr.astype("float32", copy=False))
 
     if not y_list:
         raise RuntimeError("no real targets found for output_heads")
@@ -169,6 +179,9 @@ def run_smoke_fit_real_data(
 
     history = model.fit(x_fit, y_fit, epochs=1, batch_size=batch_size, verbose=0)
     tf.keras.backend.clear_session()
+    del raw
+    del all_data
+    gc.collect()
     loss = float(history.history.get("loss", [0.0])[-1]) if history.history else 0.0
     mae = float(history.history.get("mae", [0.0])[-1]) if history.history else 0.0
     return {"loss": loss, "mae": mae, "samples": n}

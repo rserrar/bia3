@@ -35,6 +35,8 @@ def load_all_raw_data_sources(
     input_features_cfg: list[dict[str, Any]],
     output_targets_cfg: list[dict[str, Any]],
     base_data_dir: str,
+    cache_dtype: str = "float32",
+    use_memmap_cache: bool = True,
 ) -> dict[str, np.ndarray]:
     loaded_data: dict[str, np.ndarray] = {}
     keys_to_load: set[str] = set()
@@ -56,12 +58,16 @@ def load_all_raw_data_sources(
             loaded_data[csv_key] = np.array([], dtype=np.float32)
             continue
         file_path = os.path.join(base_data_dir, file_name)
-        npy_path = file_path + ".npy"
+        dtype_norm = "float16" if cache_dtype == "float16" else "float32"
+        npy_path = file_path + (".fp16.npy" if dtype_norm == "float16" else ".npy")
 
         try:
             if os.path.exists(npy_path) and os.path.exists(file_path) and os.path.getmtime(npy_path) >= os.path.getmtime(file_path):
-                arr = np.load(npy_path, mmap_mode="r")
-                if arr.dtype != np.float32:
+                mmap_mode = "r" if use_memmap_cache else None
+                arr = np.load(npy_path, mmap_mode=mmap_mode)
+                if dtype_norm == "float16" and arr.dtype != np.float16:
+                    arr = np.load(npy_path).astype(np.float16)
+                if dtype_norm == "float32" and arr.dtype != np.float32:
                     arr = np.load(npy_path).astype(np.float32)
                 loaded_data[csv_key] = arr
                 current_mb = _mb(arr)
@@ -70,6 +76,8 @@ def load_all_raw_data_sources(
                 continue
 
             arr = pd.read_csv(file_path, header=None, dtype=np.float32).values
+            if dtype_norm == "float16":
+                arr = arr.astype(np.float16)
             loaded_data[csv_key] = arr
             current_mb = _mb(arr)
             total_loaded_mb += current_mb
@@ -81,6 +89,8 @@ def load_all_raw_data_sources(
         except Exception:
             try:
                 arr = pd.read_csv(file_path, header=None).values.astype(np.float32)
+                if dtype_norm == "float16":
+                    arr = arr.astype(np.float16)
                 loaded_data[csv_key] = arr
                 total_loaded_mb += _mb(arr)
                 try:

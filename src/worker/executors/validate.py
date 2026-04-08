@@ -29,6 +29,8 @@ def execute_validate_candidate(payload: dict) -> dict:
                     base_data_dir=settings.data_dir,
                     max_rows=int(payload.get("max_real_rows", settings.max_real_rows) or settings.max_real_rows),
                     batch_size=int(payload.get("batch_size", 8) or 8),
+                    cache_dtype=settings.data_cache_dtype,
+                    use_memmap_cache=settings.use_memmap_cache,
                 )
             else:
                 smoke_result = run_smoke_fit(
@@ -68,6 +70,8 @@ def execute_validate_candidate(payload: dict) -> dict:
                             base_data_dir=settings.data_dir,
                             max_rows=int(payload.get("max_real_rows", settings.max_real_rows) or settings.max_real_rows),
                             batch_size=int(payload.get("batch_size", 8) or 8),
+                            cache_dtype=settings.data_cache_dtype,
+                            use_memmap_cache=settings.use_memmap_cache,
                         )
                     else:
                         smoke_result = run_smoke_fit(

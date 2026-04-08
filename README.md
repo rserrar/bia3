@@ -21,6 +21,8 @@ Repositori minim per executar workers Colab contra l'API V3.
        - `V3_REAL_DATA_MODE=true`
        - `V3_DATA_DIR=/content/drive/MyDrive/.../data`
        - `V3_MAX_REAL_ROWS=4096`
+       - `V3_DATA_CACHE_DTYPE=float16` (opcional per reduir RAM/cache)
+       - `V3_USE_MEMMAP_CACHE=true` (recomanat)
        - posar CSVs segons `config/experiment_config.json` (`data_paths`)
 3. Executa:
 

@@ -22,6 +22,8 @@ class Settings:
     real_data_mode: bool
     data_dir: str
     max_real_rows: int
+    data_cache_dtype: str
+    use_memmap_cache: bool
 
 
 def load_settings() -> Settings:
@@ -44,4 +46,6 @@ def load_settings() -> Settings:
         real_data_mode=os.getenv("V3_REAL_DATA_MODE", "false").lower() in {"1", "true", "yes"},
         data_dir=os.getenv("V3_DATA_DIR", "data"),
         max_real_rows=int(os.getenv("V3_MAX_REAL_ROWS", "4096")),
+        data_cache_dtype=os.getenv("V3_DATA_CACHE_DTYPE", "float32").strip().lower(),
+        use_memmap_cache=os.getenv("V3_USE_MEMMAP_CACHE", "true").lower() in {"1", "true", "yes"},
     )

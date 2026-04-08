@@ -26,6 +26,8 @@ def execute_train_continue(payload: dict) -> dict:
                     base_data_dir=settings.data_dir,
                     max_rows=int(payload.get("max_real_rows", settings.max_real_rows) or settings.max_real_rows),
                     batch_size=int(payload.get("batch_size", 16) or 16),
+                    cache_dtype=settings.data_cache_dtype,
+                    use_memmap_cache=settings.use_memmap_cache,
                 )
             else:
                 smoke = run_smoke_fit(
