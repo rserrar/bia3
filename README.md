@@ -28,6 +28,33 @@ Repositori minim per executar workers Colab contra l'API V3.
 python scripts/run_worker.py
 ```
 
+## Colab amb ZIP de Drive (mateix patró que V2)
+
+1) Muntar Drive i preparar dataset runtime:
+
+```python
+from google.colab import drive
+drive.mount('/content/drive')
+
+%cd /content/bia3
+!python scripts/colab_prepare_drive_zip.py
+```
+
+2) Definir variables d'entorn segons el resum del script:
+
+```python
+import os
+os.environ["V3_LLM_EXPERIMENT_CONFIG_FILE"] = "config/experiment_config.drive_runtime.json"
+os.environ["V3_DATA_DIR"] = "data/runtime_drive/borsa_drive_runtime"  # ajusta segons output
+os.environ["V3_REAL_DATA_MODE"] = "true"
+```
+
+3) Arrencar worker:
+
+```python
+!PYTHONPATH=/content/bia3 python -u -m src.worker.main
+```
+
 ## Notes
 
 - Aquest repo no inclou servidor ni controller.
