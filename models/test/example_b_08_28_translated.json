@@ -1,442 +1,516 @@
 {
-  "model_id": "example_b_08_28_translated",
-  "version": "1.0.0",
-  "description": "Traduccio al format JSON canonic del model b_08_28: camins micro/mid/long/dilatats, informacio extra i fusio final multi-sortida.",
-  "architecture_definition": {
-    "used_inputs": [
-      {
-        "input_layer_name": "input_prices_full_800",
-        "source_feature_name": "prices_hist_full_800",
-        "shape": [
-          800
-        ]
-      },
-      {
-        "input_layer_name": "input_last_price",
-        "source_feature_name": "last_closing_price_feature",
-        "shape": [
-          1
-        ]
-      },
-      {
-        "input_layer_name": "input_extra_data",
-        "source_feature_name": "extra_data_details",
-        "shape": [
-          9
-        ]
-      },
-      {
-        "input_layer_name": "input_min_hist_800",
-        "source_feature_name": "min_prices_hist_800",
-        "shape": [
-          800
-        ]
-      },
-      {
-        "input_layer_name": "input_max_hist_800",
-        "source_feature_name": "max_prices_hist_800",
-        "shape": [
-          800
-        ]
-      },
-      {
-        "input_layer_name": "input_prices_last_100",
-        "source_feature_name": "prices_hist_last_100",
-        "shape": [
-          100
-        ]
-      }
-    ],
-    "branches": [
-      {
-        "name": "micro_structure_path",
-        "input_source_layer": "input_prices_last_100",
-        "layers": [
-          {
-            "type": "Reshape",
-            "target_shape": [
-              100,
-              1
-            ],
-            "name": "reshape_100"
-          },
-          {
-            "type": "SeparableConv1D",
-            "filters": 32,
-            "kernel_size": 3,
-            "activation": "relu",
-            "padding": "same",
-            "name": "sep_conv_micro"
-          },
-          {
-            "type": "BatchNormalization",
-            "name": "bn_micro"
-          },
-          {
-            "type": "GlobalMaxPooling1D",
-            "name": "gmp_micro"
-          }
-        ],
-        "output_feature_map_name": "micro_features"
-      },
-      {
-        "name": "mid_momentum_path",
-        "input_source_layer": "input_prices_full_800",
-        "layers": [
-          {
-            "type": "Reshape",
-            "target_shape": [
-              800,
-              1
-            ],
-            "name": "reshape_800_mid"
-          },
-          {
-            "type": "Conv1D",
-            "filters": 16,
-            "kernel_size": 20,
-            "strides": 4,
-            "activation": "swish",
-            "padding": "same",
-            "name": "conv_mid_mom"
-          },
-          {
-            "type": "GlobalAveragePooling1D",
-            "name": "gap_mid_mom"
-          }
-        ],
-        "output_feature_map_name": "mid_mom_features"
-      },
-      {
-        "name": "long_momentum_path",
-        "input_source_layer": "input_prices_full_800",
-        "layers": [
-          {
-            "type": "Reshape",
-            "target_shape": [
-              800,
-              1
-            ],
-            "name": "reshape_800_long"
-          },
-          {
-            "type": "Conv1D",
-            "filters": 16,
-            "kernel_size": 60,
-            "strides": 4,
-            "activation": "swish",
-            "padding": "same",
-            "name": "conv_long_mom"
-          },
-          {
-            "type": "GlobalAveragePooling1D",
-            "name": "gap_long_mom"
-          }
-        ],
-        "output_feature_map_name": "long_mom_features"
-      },
-      {
-        "name": "dilated_cycle_path",
-        "input_source_layer": "input_prices_full_800",
-        "layers": [
-          {
-            "type": "Reshape",
-            "target_shape": [
-              800,
-              1
-            ],
-            "name": "reshape_800_dilated"
-          },
-          {
-            "type": "Conv1D",
-            "filters": 16,
-            "kernel_size": 3,
-            "dilation_rate": 4,
-            "activation": "swish",
-            "padding": "same",
-            "name": "conv_dilated"
-          },
-          {
-            "type": "GlobalAveragePooling1D",
-            "name": "gap_dilated"
-          }
-        ],
-        "output_feature_map_name": "dilated_features"
-      },
-      {
-        "name": "volatility_min_path",
-        "input_source_layer": "input_min_hist_800",
-        "layers": [
-          {
-            "type": "Reshape",
-            "target_shape": [
-              800,
-              1
-            ],
-            "name": "reshape_min"
-          },
-          {
-            "type": "Conv1D",
-            "filters": 16,
-            "kernel_size": 10,
-            "strides": 5,
-            "activation": "relu",
-            "padding": "same",
-            "name": "conv_vol_min"
-          },
-          {
-            "type": "GlobalAveragePooling1D",
-            "name": "gap_vol_min"
-          }
-        ],
-        "output_feature_map_name": "vol_min_features"
-      },
-      {
-        "name": "volatility_max_path",
-        "input_source_layer": "input_max_hist_800",
-        "layers": [
-          {
-            "type": "Reshape",
-            "target_shape": [
-              800,
-              1
-            ],
-            "name": "reshape_max"
-          },
-          {
-            "type": "Conv1D",
-            "filters": 16,
-            "kernel_size": 10,
-            "strides": 5,
-            "activation": "relu",
-            "padding": "same",
-            "name": "conv_vol_max"
-          },
-          {
-            "type": "GlobalAveragePooling1D",
-            "name": "gap_vol_max"
-          }
-        ],
-        "output_feature_map_name": "vol_max_features"
-      },
-      {
-        "name": "extra_info_path",
-        "input_source_layer": "input_extra_data",
-        "layers": [
-          {
-            "type": "Dense",
-            "units": 16,
-            "activation": "swish",
-            "name": "dense_extra_1"
-          },
-          {
-            "type": "Dense",
-            "units": 16,
-            "activation": "swish",
-            "name": "dense_extra_2"
-          }
-        ],
-        "output_feature_map_name": "extra_features"
-      },
-      {
-        "name": "last_price_path",
-        "input_source_layer": "input_last_price",
-        "layers": [
-          {
-            "type": "Dense",
-            "units": 16,
-            "activation": "swish",
-            "name": "dense_last_1"
-          }
-        ],
-        "output_feature_map_name": "last_price_features"
-      },
-      {
-        "name": "final_fusion_path",
-        "input_source_layer": "input_extra_data",
-        "layers": [
-          {
-            "type": "Dense",
-            "units": 32,
-            "name": "dense_from_micro",
-            "explicit_input_source_feature_map": "micro_features"
-          },
-          {
-            "type": "Dense",
-            "units": 32,
-            "name": "dense_from_mid",
-            "explicit_input_source_feature_map": "mid_mom_features"
-          },
-          {
-            "type": "Add",
-            "name": "add_1",
-            "input_source_feature_maps": [
-              "dense_from_micro",
-              "dense_from_mid"
-            ]
-          },
-          {
-            "type": "Dense",
-            "units": 32,
-            "name": "dense_from_long",
-            "explicit_input_source_feature_map": "long_mom_features"
-          },
-          {
-            "type": "Add",
-            "name": "add_2",
-            "input_source_feature_maps": [
-              "add_1",
-              "dense_from_long"
-            ]
-          },
-          {
-            "type": "Dense",
-            "units": 32,
-            "name": "dense_from_dilated",
-            "explicit_input_source_feature_map": "dilated_features"
-          },
-          {
-            "type": "Add",
-            "name": "add_3",
-            "input_source_feature_maps": [
-              "add_2",
-              "dense_from_dilated"
-            ]
-          },
-          {
-            "type": "Dense",
-            "units": 32,
-            "name": "dense_from_vol_min",
-            "explicit_input_source_feature_map": "vol_min_features"
-          },
-          {
-            "type": "Add",
-            "name": "add_4",
-            "input_source_feature_maps": [
-              "add_3",
-              "dense_from_vol_min"
-            ]
-          },
-          {
-            "type": "Dense",
-            "units": 32,
-            "name": "dense_from_vol_max",
-            "explicit_input_source_feature_map": "vol_max_features"
-          },
-          {
-            "type": "Add",
-            "name": "add_5",
-            "input_source_feature_maps": [
-              "add_4",
-              "dense_from_vol_max"
-            ]
-          },
-          {
-            "type": "Dense",
-            "units": 32,
-            "name": "dense_from_extra",
-            "explicit_input_source_feature_map": "extra_features"
-          },
-          {
-            "type": "Add",
-            "name": "add_6",
-            "input_source_feature_maps": [
-              "add_5",
-              "dense_from_extra"
-            ]
-          },
-          {
-            "type": "Dense",
-            "units": 32,
-            "name": "dense_from_last_price",
-            "explicit_input_source_feature_map": "last_price_features"
-          },
-          {
-            "type": "Add",
-            "name": "add_7",
-            "input_source_feature_maps": [
-              "add_6",
-              "dense_from_last_price"
-            ]
-          },
-          {
-            "type": "LayerNormalization",
-            "name": "ln_fusion"
-          },
-          {
-            "type": "Dense",
-            "units": 320,
-            "activation": "swish",
-            "name": "dense_fused_1"
-          },
-          {
-            "type": "Dropout",
-            "rate": 0.3,
-            "name": "dropout_fusion"
-          },
-          {
-            "type": "Dense",
-            "units": 128,
-            "activation": "swish",
-            "name": "dense_fused_2"
-          }
-        ],
-        "output_feature_map_name": "final_representation"
-      }
-    ],
-    "output_heads": [
-      {
-        "output_layer_name": "output_reconstruct_100",
-        "maps_to_target_config_name": "reconstruct_prices_last_100_target",
-        "source_feature_map": "final_representation"
-      },
-      {
-        "output_layer_name": "output_close_7d",
-        "maps_to_target_config_name": "closing_prices_7_days_prediction",
-        "source_feature_map": "final_representation"
-      },
-      {
-        "output_layer_name": "output_min_7d",
-        "maps_to_target_config_name": "min_7_days_prediction",
-        "source_feature_map": "final_representation"
-      },
-      {
-        "output_layer_name": "output_max_7d",
-        "maps_to_target_config_name": "max_7_days_prediction",
-        "source_feature_map": "final_representation"
-      },
-      {
-        "output_layer_name": "output_metrics_4",
-        "maps_to_target_config_name": "price_change_metrics_4_vals",
-        "source_feature_map": "final_representation"
-      },
-      {
-        "output_layer_name": "output_stop_loss",
-        "maps_to_target_config_name": "stop_loss_prediction",
-        "source_feature_map": "final_representation"
-      },
-      {
-        "output_layer_name": "output_take_profit",
-        "maps_to_target_config_name": "take_profit_prediction",
-        "source_feature_map": "final_representation"
-      }
-    ]
-  },
-  "training_config": {
-    "compile": {
-      "optimizer": {
-        "type": "Nadam"
-      },
-      "dynamic_loss_config_source": "output_targets_config"
-    },
-    "fit": {
-      "epochs": 3,
-      "batch_size": 32
-    }
-  },
-  "model_definition_summary": {
-    "kind": "translated_reference",
-    "source": "b_08_28",
-    "focus": "multi_path_fusion"
-  }
+"model_id": "example_b_08_28_equivalent",
+"version": "1.0.0",
+"description": "Model de referencia equivalent al graf funcional actiu de b_08_28: micro-branch amb slice dels primers 100 valors, camins conv1d per momentum curt/mig/llarg, fusio de volatilitat min/max i fusio final multi-sortida.",
+"change_log": [
+"Versio inicial del model d'exemple equivalent a b_08_28.",
+"S'eliminen camins auxiliars morts que no alimentaven cap sortida del model final.",
+"La fusio de volatilitat es representa explicitament com a merge concatenate + Conv1D + GlobalAveragePooling1D.",
+"La fusio final es representa com a merge concatenate de set fonts abans de LayerNormalization i dues capes Dense.",
+"S'afegeixen regularitzadors l1_l2 a les capes amb kernel per reflectir el comportament del codi Python."
+],
+"llm_reasoning": "Aquest JSON replica el subgraf funcional real que arriba a les vuit sortides finals del model b_08_28. Es manté el slice dels primers 100 punts per a microestructura, tres camins sobre la serie completa de 800 punts, una fusio explicita de minims i maxims en 3D, i una fusio final tardana amb la feature escalar input_dades_u. Les sortides pengen totes de final_representation, tal com fa el model Keras original.",
+"potential_next_variations": [
+"Afegir una branca residual sobre input_dades_1 abans de la fusio final.",
+"Provar SeparableConv1D tambe als camins mid_momentum_path i long_momentum_path.",
+"Substituir la fusio final simple per una fusio jerarquica amb un merge intermedi.",
+"Reduir la regularitzacio global si el model queda massa infraajustat."
+],
+"seed": 42,
+"architecture_definition": {
+"used_inputs": [
+{
+"input_layer_name": "input_dades_1",
+"source_feature_name": "input_dades_1",
+"shape": [800]
+},
+{
+"input_layer_name": "input_dades_u",
+"source_feature_name": "input_dades_u",
+"shape": [1]
+},
+{
+"input_layer_name": "input_dades_e",
+"source_feature_name": "input_dades_e",
+"shape": [3]
+},
+{
+"input_layer_name": "input_dades_min",
+"source_feature_name": "input_dades_min",
+"shape": [800]
+},
+{
+"input_layer_name": "input_dades_max",
+"source_feature_name": "input_dades_max",
+"shape": [800]
+}
+],
+"branches": [
+{
+"name": "micro_structure_path",
+"input_source_layer": "input_dades_1",
+"layers": [
+{
+"type": "LambdaSlice",
+"name": "input_short_100_slice",
+"slice_params": {
+"axis": 1,
+"start": 0,
+"end": 100,
+"step": null
+}
+},
+{
+"type": "Reshape",
+"name": "reshape_100",
+"target_shape": [100, 1]
+},
+{
+"type": "SeparableConv1D",
+"name": "sep_conv_micro",
+"filters": 32,
+"kernel_size": 3,
+"activation": "relu",
+"padding": "same",
+"use_bias": true,
+"kernel_regularizer": {
+"type": "l1_l2",
+"l1": 0.1,
+"l2": 0.1
+}
+},
+{
+"type": "BatchNormalization",
+"name": "bn_micro"
+},
+{
+"type": "GlobalMaxPooling1D",
+"name": "gmp_micro"
+}
+],
+"output_feature_map_name": "micro_features"
+},
+{
+"name": "mid_momentum_path",
+"input_source_layer": "input_dades_1",
+"layers": [
+{
+"type": "Reshape",
+"name": "reshape_800_mid",
+"target_shape": [800, 1]
+},
+{
+"type": "Conv1D",
+"name": "conv_mid_mom",
+"filters": 16,
+"kernel_size": 20,
+"strides": 4,
+"activation": "swish",
+"padding": "same",
+"use_bias": true,
+"kernel_regularizer": {
+"type": "l1_l2",
+"l1": 0.1,
+"l2": 0.1
+}
+},
+{
+"type": "GlobalAveragePooling1D",
+"name": "gap_mid_mom"
+}
+],
+"output_feature_map_name": "mid_mom_features"
+},
+{
+"name": "long_momentum_path",
+"input_source_layer": "input_dades_1",
+"layers": [
+{
+"type": "Reshape",
+"name": "reshape_800_long",
+"target_shape": [800, 1]
+},
+{
+"type": "Conv1D",
+"name": "conv_long_mom",
+"filters": 16,
+"kernel_size": 60,
+"strides": 4,
+"activation": "swish",
+"padding": "same",
+"use_bias": true,
+"kernel_regularizer": {
+"type": "l1_l2",
+"l1": 0.1,
+"l2": 0.1
+}
+},
+{
+"type": "GlobalAveragePooling1D",
+"name": "gap_long_mom"
+}
+],
+"output_feature_map_name": "long_mom_features"
+},
+{
+"name": "dilated_cycle_path",
+"input_source_layer": "input_dades_1",
+"layers": [
+{
+"type": "Reshape",
+"name": "reshape_800_dilated",
+"target_shape": [800, 1]
+},
+{
+"type": "Conv1D",
+"name": "conv_dilated",
+"filters": 16,
+"kernel_size": 3,
+"dilation_rate": 4,
+"activation": "swish",
+"padding": "same",
+"use_bias": true,
+"kernel_regularizer": {
+"type": "l1_l2",
+"l1": 0.1,
+"l2": 0.1
+}
+},
+{
+"type": "GlobalAveragePooling1D",
+"name": "gap_dilated"
+}
+],
+"output_feature_map_name": "dilated_features"
+},
+{
+"name": "max_prep_path",
+"input_source_layer": "input_dades_max",
+"layers": [
+{
+"type": "Reshape",
+"name": "reshape_max",
+"target_shape": [800, 1]
+}
+],
+"output_feature_map_name": "max_3d"
+},
+{
+"name": "min_prep_path",
+"input_source_layer": "input_dades_min",
+"layers": [
+{
+"type": "Reshape",
+"name": "reshape_min",
+"target_shape": [800, 1]
+}
+],
+"output_feature_map_name": "min_3d"
+},
+{
+"name": "extra_info_path",
+"input_source_layer": "input_dades_e",
+"layers": [
+{
+"type": "Dense",
+"name": "dense_extra_1",
+"units": 16,
+"activation": "swish",
+"use_bias": true,
+"kernel_regularizer": {
+"type": "l1_l2",
+"l1": 0.1,
+"l2": 0.1
+}
+},
+{
+"type": "Dense",
+"name": "dense_extra_2",
+"units": 16,
+"activation": "swish",
+"use_bias": true,
+"kernel_regularizer": {
+"type": "l1_l2",
+"l1": 0.1,
+"l2": 0.1
+}
+}
+],
+"output_feature_map_name": "extra_features"
+}
+],
+"merges": [
+{
+"name": "volatility_fusion",
+"type": "concatenate",
+"source_feature_maps": [
+"max_3d",
+"min_3d"
+],
+"layers_after_merge": [
+{
+"type": "Conv1D",
+"name": "conv_vol",
+"filters": 32,
+"kernel_size": 10,
+"strides": 5,
+"activation": "relu",
+"padding": "valid",
+"use_bias": true,
+"kernel_regularizer": {
+"type": "l1_l2",
+"l1": 0.1,
+"l2": 0.1
+}
+},
+{
+"type": "GlobalAveragePooling1D",
+"name": "gap_vol"
+}
+],
+"output_feature_map_name": "vol_features"
+},
+{
+"name": "final_fusion",
+"type": "concatenate",
+"source_feature_maps": [
+"micro_features",
+"mid_mom_features",
+"long_mom_features",
+"dilated_features",
+"vol_features",
+"extra_features",
+"input_dades_u"
+],
+"layers_after_merge": [
+{
+"type": "LayerNormalization",
+"name": "ln_fusion"
+},
+{
+"type": "Dense",
+"name": "dense_fused_1",
+"units": 320,
+"activation": "swish",
+"use_bias": true,
+"kernel_regularizer": {
+"type": "l1_l2",
+"l1": 0.1,
+"l2": 0.1
+}
+},
+{
+"type": "Dropout",
+"name": "dropout_fusion",
+"rate": 0.3
+},
+{
+"type": "Dense",
+"name": "dense_fused_2",
+"units": 128,
+"activation": "swish",
+"use_bias": true,
+"kernel_regularizer": {
+"type": "l1_l2",
+"l1": 0.1,
+"l2": 0.1
+}
+}
+],
+"output_feature_map_name": "final_representation"
+}
+],
+"output_heads": [
+{
+"output_layer_name": "sortida_a",
+"maps_to_target_config_name": "sortida_a",
+"source_feature_map": "final_representation",
+"units": 100,
+"activation": "linear",
+"use_bias": true,
+"kernel_regularizer": {
+"type": "l1_l2",
+"l1": 0.1,
+"l2": 0.1
+}
+},
+{
+"output_layer_name": "sortida_1",
+"maps_to_target_config_name": "sortida_1",
+"source_feature_map": "final_representation",
+"units": 1,
+"activation": "linear",
+"use_bias": true,
+"kernel_regularizer": {
+"type": "l1_l2",
+"l1": 0.1,
+"l2": 0.1
+}
+},
+{
+"output_layer_name": "sortida_2",
+"maps_to_target_config_name": "sortida_2",
+"source_feature_map": "final_representation",
+"units": 5,
+"activation": "linear",
+"use_bias": true,
+"kernel_regularizer": {
+"type": "l1_l2",
+"l1": 0.1,
+"l2": 0.1
+}
+},
+{
+"output_layer_name": "sortida_min",
+"maps_to_target_config_name": "sortida_min",
+"source_feature_map": "final_representation",
+"units": 7,
+"activation": "linear",
+"use_bias": true,
+"kernel_regularizer": {
+"type": "l1_l2",
+"l1": 0.1,
+"l2": 0.1
+}
+},
+{
+"output_layer_name": "sortida_max",
+"maps_to_target_config_name": "sortida_max",
+"source_feature_map": "final_representation",
+"units": 7,
+"activation": "linear",
+"use_bias": true,
+"kernel_regularizer": {
+"type": "l1_l2",
+"l1": 0.1,
+"l2": 0.1
+}
+},
+{
+"output_layer_name": "sortida_promig",
+"maps_to_target_config_name": "sortida_promig",
+"source_feature_map": "final_representation",
+"units": 50,
+"activation": "linear",
+"use_bias": true,
+"kernel_regularizer": {
+"type": "l1_l2",
+"l1": 0.1,
+"l2": 0.1
+}
+},
+{
+"output_layer_name": "sortida_sl",
+"maps_to_target_config_name": "sortida_sl",
+"source_feature_map": "final_representation",
+"units": 1,
+"activation": "linear",
+"use_bias": true,
+"kernel_regularizer": {
+"type": "l1_l2",
+"l1": 0.1,
+"l2": 0.1
+}
+},
+{
+"output_layer_name": "sortida_tb",
+"maps_to_target_config_name": "sortida_tb",
+"source_feature_map": "final_representation",
+"units": 1,
+"activation": "linear",
+"use_bias": true,
+"kernel_regularizer": {
+"type": "l1_l2",
+"l1": 0.1,
+"l2": 0.1
+}
+}
+]
+},
+"training_config": {
+"compile": {
+"optimizer": {
+"type": "Nadam"
+},
+"dynamic_loss_config_source": "output_targets_config"
+},
+"fit": {
+"epochs": 3,
+"batch_size": 32
+}
+},
+"output_targets_config_runtime": [
+{
+"target_name": "sortida_a",
+"default_output_layer_name": "sortida_a",
+"total_columns": 100,
+"activation_output_layer": "linear",
+"loss_function": "mean_squared_error",
+"loss_weight": 1.0,
+"metrics": ["mae"]
+},
+{
+"target_name": "sortida_1",
+"default_output_layer_name": "sortida_1",
+"total_columns": 1,
+"activation_output_layer": "linear",
+"loss_function": "mean_squared_error",
+"loss_weight": 1.0,
+"metrics": ["mae"]
+},
+{
+"target_name": "sortida_2",
+"default_output_layer_name": "sortida_2",
+"total_columns": 5,
+"activation_output_layer": "linear",
+"loss_function": "mean_squared_error",
+"loss_weight": 1.0,
+"metrics": ["mae"]
+},
+{
+"target_name": "sortida_min",
+"default_output_layer_name": "sortida_min",
+"total_columns": 7,
+"activation_output_layer": "linear",
+"loss_function": "mean_squared_error",
+"loss_weight": 1.0,
+"metrics": ["mae"]
+},
+{
+"target_name": "sortida_max",
+"default_output_layer_name": "sortida_max",
+"total_columns": 7,
+"activation_output_layer": "linear",
+"loss_function": "mean_squared_error",
+"loss_weight": 1.0,
+"metrics": ["mae"]
+},
+{
+"target_name": "sortida_promig",
+"default_output_layer_name": "sortida_promig",
+"total_columns": 50,
+"activation_output_layer": "linear",
+"loss_function": "mean_squared_error",
+"loss_weight": 1.0,
+"metrics": ["mae"]
+},
+{
+"target_name": "sortida_sl",
+"default_output_layer_name": "sortida_sl",
+"total_columns": 1,
+"activation_output_layer": "linear",
+"loss_function": "mean_squared_error",
+"loss_weight": 1.0,
+"metrics": ["mae"]
+},
+{
+"target_name": "sortida_tb",
+"default_output_layer_name": "sortida_tb",
+"total_columns": 1,
+"activation_output_layer": "linear",
+"loss_function": "mean_squared_error",
+"loss_weight": 1.0,
+"metrics": ["mae"]
+}
+]
 }
