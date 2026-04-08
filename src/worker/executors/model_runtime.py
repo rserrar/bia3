@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import base64
-import tempfile
 import gc
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +21,390 @@ def _tf():
     return tf
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _as_list_of_dicts(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def _layer_kind(layer: dict[str, Any], default: str = "Dense") -> str:
+    kind = layer.get("type")
+    if kind is None:
+        kind = layer.get("layer_type")
+    return str(kind or default)
+
+
+def _layer_params(layer: dict[str, Any]) -> dict[str, Any]:
+    params = layer.get("params")
+    if isinstance(params, dict):
+        merged = dict(layer)
+        merged.pop("params", None)
+        for key, value in params.items():
+            merged[key] = value
+        return merged
+    return dict(layer)
+
+
+def _as_shape_tuple(shape_value: Any) -> tuple[int, ...] | None:
+    if isinstance(shape_value, int):
+        return (max(1, int(shape_value)),)
+    if not isinstance(shape_value, list):
+        return None
+    dims: list[int] = []
+    for value in shape_value:
+        try:
+            parsed = int(value)
+        except Exception:
+            return None
+        if parsed <= 0:
+            return None
+        dims.append(parsed)
+    return tuple(dims) if dims else None
+
+
+def _resolve_initializer(tf: Any, value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        try:
+            return tf.keras.initializers.get(value)
+        except Exception:
+            return None
+    if isinstance(value, dict):
+        raw_type = value.get("type") or value.get("class_name")
+        if raw_type is None:
+            return None
+        init_type = str(raw_type)
+        params = {k: v for k, v in value.items() if k not in {"type", "class_name"}}
+        cls = getattr(tf.keras.initializers, init_type, None)
+        if cls is not None:
+            try:
+                return cls(**params)
+            except Exception:
+                return None
+        try:
+            return tf.keras.initializers.get(init_type)
+        except Exception:
+            return None
+    return None
+
+
+def _resolve_regularizer(tf: Any, value: Any) -> Any:
+    if not isinstance(value, dict):
+        return None
+    reg_type = str(value.get("type", "")).strip().lower()
+    l1 = float(value.get("l1", 0.0) or 0.0)
+    l2 = float(value.get("l2", 0.0) or 0.0)
+    if reg_type == "l1_l2":
+        return tf.keras.regularizers.l1_l2(l1=l1, l2=l2)
+    if reg_type == "l1":
+        return tf.keras.regularizers.l1(l1)
+    if reg_type == "l2":
+        return tf.keras.regularizers.l2(l2)
+    return None
+
+
+def _safe_tensor_name(tensor: Any) -> str:
+    name = str(getattr(tensor, "name", ""))
+    return name.split(":", 1)[0] if ":" in name else name
+
+
+def _build_lambda_slice(tf: Any, axis: int, start: Any, end: Any, step: Any):
+    def _slice_fn(t: Any) -> Any:
+        rank = len(t.shape)
+        safe_axis = int(axis)
+        if safe_axis < 0:
+            safe_axis += rank
+        safe_axis = max(0, min(rank - 1, safe_axis))
+        slices = [slice(None)] * rank
+        slices[safe_axis] = slice(start, end, step)
+        return t[tuple(slices)]
+
+    return tf.keras.layers.Lambda(_slice_fn)
+
+
+def _get_multi_input_tensors(feature_maps: dict[str, Any], names_value: Any) -> list[Any]:
+    if not isinstance(names_value, list):
+        return []
+    tensors: list[Any] = []
+    for item in names_value:
+        key = str(item).strip()
+        if key == "":
+            continue
+        tensor = feature_maps.get(key)
+        if tensor is not None:
+            tensors.append(tensor)
+    return tensors
+
+
+def _resolve_optimizer(tf: Any, optimizer_value: Any) -> Any:
+    if isinstance(optimizer_value, str) and optimizer_value.strip() != "":
+        try:
+            return tf.keras.optimizers.get(optimizer_value)
+        except Exception:
+            return tf.keras.optimizers.Adam()
+    if isinstance(optimizer_value, dict):
+        kind = str(optimizer_value.get("type", "Adam")).strip() or "Adam"
+        params = {k: v for k, v in optimizer_value.items() if k != "type"}
+        cls = getattr(tf.keras.optimizers, kind, None)
+        if cls is not None:
+            try:
+                return cls(**params)
+            except Exception:
+                pass
+        try:
+            return tf.keras.optimizers.get(kind)
+        except Exception:
+            return tf.keras.optimizers.Adam()
+    return tf.keras.optimizers.Adam()
+
+
+def _apply_layer(
+    tf: Any,
+    x: Any,
+    layer: dict[str, Any],
+    feature_maps: dict[str, Any],
+    default_activation: str = "relu",
+) -> Any:
+    p = _layer_params(layer)
+    layer_type = _layer_kind(p)
+    layer_name = str(p.get("name", "")).strip() or None
+
+    explicit_source = str(p.get("explicit_input_source_feature_map", "")).strip()
+    if explicit_source != "" and feature_maps.get(explicit_source) is not None:
+        x = feature_maps[explicit_source]
+
+    multi_tensors = _get_multi_input_tensors(feature_maps, p.get("input_source_feature_maps"))
+
+    def _dense_kwargs() -> dict[str, Any]:
+        return {
+            "name": layer_name,
+            "use_bias": bool(p.get("use_bias", True)),
+            "kernel_initializer": _resolve_initializer(tf, p.get("kernel_initializer")),
+            "bias_initializer": _resolve_initializer(tf, p.get("bias_initializer")),
+            "kernel_regularizer": _resolve_regularizer(tf, p.get("kernel_regularizer")),
+            "bias_regularizer": _resolve_regularizer(tf, p.get("bias_regularizer")),
+            "activity_regularizer": _resolve_regularizer(tf, p.get("activity_regularizer")),
+        }
+
+    if layer_type == "Dense":
+        units = int(p.get("units", 32) or 32)
+        activation = str(p.get("activation", default_activation))
+        kwargs = _dense_kwargs()
+        return tf.keras.layers.Dense(units, activation=activation, **kwargs)(x)
+
+    if layer_type == "Dropout":
+        rate = float(p.get("rate", 0.2) or 0.2)
+        return tf.keras.layers.Dropout(rate=rate, name=layer_name)(x)
+
+    if layer_type == "SpatialDropout1D":
+        rate = float(p.get("rate", 0.2) or 0.2)
+        return tf.keras.layers.SpatialDropout1D(rate=rate, name=layer_name)(x)
+
+    if layer_type == "BatchNormalization":
+        kwargs = {k: v for k, v in p.items() if k not in {"type", "layer_type", "name", "params", "explicit_input_source_feature_map", "input_source_feature_maps"}}
+        if layer_name is not None:
+            kwargs["name"] = layer_name
+        return tf.keras.layers.BatchNormalization(**kwargs)(x)
+
+    if layer_type == "LayerNormalization":
+        kwargs = {k: v for k, v in p.items() if k not in {"type", "layer_type", "name", "params", "explicit_input_source_feature_map", "input_source_feature_maps"}}
+        if layer_name is not None:
+            kwargs["name"] = layer_name
+        return tf.keras.layers.LayerNormalization(**kwargs)(x)
+
+    if layer_type == "Reshape":
+        target_shape = _as_shape_tuple(p.get("target_shape"))
+        if target_shape is None:
+            target_shape = (int(p.get("units", 1) or 1),)
+        return tf.keras.layers.Reshape(target_shape=target_shape, name=layer_name)(x)
+
+    if layer_type == "Conv1D":
+        kwargs = {
+            "filters": int(p.get("filters", 16) or 16),
+            "kernel_size": int(p.get("kernel_size", 3) or 3),
+            "activation": p.get("activation", default_activation),
+            "padding": str(p.get("padding", "valid")),
+            "strides": int(p.get("strides", 1) or 1),
+            "dilation_rate": int(p.get("dilation_rate", 1) or 1),
+            "use_bias": bool(p.get("use_bias", True)),
+            "name": layer_name,
+            "kernel_initializer": _resolve_initializer(tf, p.get("kernel_initializer")),
+            "bias_initializer": _resolve_initializer(tf, p.get("bias_initializer")),
+            "kernel_regularizer": _resolve_regularizer(tf, p.get("kernel_regularizer")),
+            "bias_regularizer": _resolve_regularizer(tf, p.get("bias_regularizer")),
+            "activity_regularizer": _resolve_regularizer(tf, p.get("activity_regularizer")),
+        }
+        return tf.keras.layers.Conv1D(**kwargs)(x)
+
+    if layer_type == "SeparableConv1D":
+        kwargs = {
+            "filters": int(p.get("filters", 16) or 16),
+            "kernel_size": int(p.get("kernel_size", 3) or 3),
+            "activation": p.get("activation", default_activation),
+            "padding": str(p.get("padding", "valid")),
+            "strides": int(p.get("strides", 1) or 1),
+            "dilation_rate": int(p.get("dilation_rate", 1) or 1),
+            "depth_multiplier": int(p.get("depth_multiplier", 1) or 1),
+            "use_bias": bool(p.get("use_bias", True)),
+            "name": layer_name,
+            "depthwise_initializer": _resolve_initializer(tf, p.get("depthwise_initializer")),
+            "pointwise_initializer": _resolve_initializer(tf, p.get("pointwise_initializer")),
+            "bias_initializer": _resolve_initializer(tf, p.get("bias_initializer")),
+            "depthwise_regularizer": _resolve_regularizer(tf, p.get("kernel_regularizer")),
+            "pointwise_regularizer": _resolve_regularizer(tf, p.get("kernel_regularizer")),
+            "bias_regularizer": _resolve_regularizer(tf, p.get("bias_regularizer")),
+            "activity_regularizer": _resolve_regularizer(tf, p.get("activity_regularizer")),
+        }
+        return tf.keras.layers.SeparableConv1D(**kwargs)(x)
+
+    if layer_type == "LSTM":
+        kwargs = {
+            "units": int(p.get("units", 32) or 32),
+            "activation": str(p.get("activation", "tanh")),
+            "recurrent_activation": str(p.get("recurrent_activation", "sigmoid")),
+            "return_sequences": bool(p.get("return_sequences", False)),
+            "use_bias": bool(p.get("use_bias", True)),
+            "name": layer_name,
+            "kernel_initializer": _resolve_initializer(tf, p.get("kernel_initializer")),
+            "recurrent_initializer": _resolve_initializer(tf, p.get("recurrent_initializer")),
+            "bias_initializer": _resolve_initializer(tf, p.get("bias_initializer")),
+            "kernel_regularizer": _resolve_regularizer(tf, p.get("kernel_regularizer")),
+            "bias_regularizer": _resolve_regularizer(tf, p.get("bias_regularizer")),
+            "activity_regularizer": _resolve_regularizer(tf, p.get("activity_regularizer")),
+        }
+        return tf.keras.layers.LSTM(**kwargs)(x)
+
+    if layer_type == "MaxPooling1D":
+        kwargs = {
+            "pool_size": int(p.get("pool_size", 2) or 2),
+            "strides": int(p.get("strides", 2) or 2),
+            "padding": str(p.get("padding", "valid")),
+            "name": layer_name,
+        }
+        return tf.keras.layers.MaxPooling1D(**kwargs)(x)
+
+    if layer_type == "GlobalMaxPooling1D":
+        keepdims = bool(p.get("keepdims", False))
+        return tf.keras.layers.GlobalMaxPooling1D(keepdims=keepdims, name=layer_name)(x)
+
+    if layer_type == "GlobalAveragePooling1D":
+        keepdims = bool(p.get("keepdims", False))
+        return tf.keras.layers.GlobalAveragePooling1D(keepdims=keepdims, name=layer_name)(x)
+
+    if layer_type == "Flatten":
+        return tf.keras.layers.Flatten(name=layer_name)(x)
+
+    if layer_type == "Activation":
+        activation = str(p.get("activation_function", p.get("activation", default_activation)))
+        return tf.keras.layers.Activation(activation, name=layer_name)(x)
+
+    if layer_type == "LambdaSlice":
+        slice_params = _as_dict(p.get("slice_params"))
+        axis = int(slice_params.get("axis", 1) or 1)
+        start = slice_params.get("start", None)
+        end = slice_params.get("end", None)
+        step = slice_params.get("step", None)
+        layer_obj = _build_lambda_slice(tf, axis=axis, start=start, end=end, step=step)
+        if layer_name:
+            layer_obj._name = layer_name
+        return layer_obj(x)
+
+    if layer_type == "Add":
+        if len(multi_tensors) < 2:
+            return x
+        return tf.keras.layers.Add(name=layer_name)(multi_tensors)
+
+    if layer_type == "Multiply":
+        if len(multi_tensors) < 2:
+            return x
+        return tf.keras.layers.Multiply(name=layer_name)(multi_tensors)
+
+    if layer_type == "Concatenate":
+        if len(multi_tensors) < 2:
+            return x
+        axis = int(p.get("axis", -1) or -1)
+        return tf.keras.layers.Concatenate(axis=axis, name=layer_name)(multi_tensors)
+
+    if layer_type == "AttentionKeras":
+        tensors = multi_tensors if len(multi_tensors) >= 2 else [x, x]
+        params = _as_dict(p.get("params"))
+        kwargs = {}
+        if "dropout" in params:
+            kwargs["dropout"] = float(params.get("dropout", 0.0) or 0.0)
+        if layer_name is not None:
+            kwargs["name"] = layer_name
+        att = tf.keras.layers.Attention(**kwargs)
+        call_kwargs = {}
+        if "use_causal_mask" in params:
+            call_kwargs["use_causal_mask"] = bool(params.get("use_causal_mask"))
+        if len(tensors) >= 3:
+            return att([tensors[0], tensors[1], tensors[2]], **call_kwargs)
+        return att([tensors[0], tensors[1]], **call_kwargs)
+
+    if layer_type == "MultiHeadAttentionKeras":
+        tensors = multi_tensors if len(multi_tensors) >= 1 else [x]
+        constructor_params = _as_dict(p.get("constructor_params"))
+        num_heads = int(constructor_params.get("num_heads", p.get("num_heads", 2)) or 2)
+        key_dim = int(constructor_params.get("key_dim", p.get("key_dim", 16)) or 16)
+        kwargs = {
+            "num_heads": num_heads,
+            "key_dim": key_dim,
+            "name": layer_name,
+        }
+        if "value_dim" in constructor_params:
+            kwargs["value_dim"] = int(constructor_params.get("value_dim") or 0)
+        if "dropout" in constructor_params:
+            kwargs["dropout"] = float(constructor_params.get("dropout", 0.0) or 0.0)
+        if "use_bias" in constructor_params:
+            kwargs["use_bias"] = bool(constructor_params.get("use_bias"))
+        kernel_init = _resolve_initializer(tf, constructor_params.get("kernel_initializer"))
+        if kernel_init is not None:
+            kwargs["kernel_initializer"] = kernel_init
+        bias_init = _resolve_initializer(tf, constructor_params.get("bias_initializer"))
+        if bias_init is not None:
+            kwargs["bias_initializer"] = bias_init
+
+        layer_obj = tf.keras.layers.MultiHeadAttention(**kwargs)
+        call_params = _as_dict(p.get("call_params"))
+        call_kwargs = {}
+        if "use_causal_mask" in call_params:
+            call_kwargs["use_causal_mask"] = bool(call_params.get("use_causal_mask"))
+        if "attention_mask" in call_params:
+            mask_name = str(call_params.get("attention_mask", "")).strip()
+            if mask_name and feature_maps.get(mask_name) is not None:
+                call_kwargs["attention_mask"] = feature_maps[mask_name]
+        return_scores = bool(call_params.get("return_attention_scores", False))
+        if return_scores:
+            call_kwargs["return_attention_scores"] = True
+
+        if len(tensors) == 1:
+            q = tensors[0]
+            v = tensors[0]
+            out = layer_obj(query=q, value=v, key=v, **call_kwargs)
+        elif len(tensors) == 2:
+            q = tensors[0]
+            v = tensors[1]
+            out = layer_obj(query=q, value=v, key=v, **call_kwargs)
+        else:
+            q = tensors[0]
+            v = tensors[1]
+            k = tensors[2]
+            out = layer_obj(query=q, value=v, key=k, **call_kwargs)
+
+        if return_scores and isinstance(out, tuple) and len(out) == 2:
+            if layer_name:
+                feature_maps[f"{layer_name}_scores"] = out[1]
+            return out[0]
+        return out
+
+    return x
+
+
 def build_keras_model(
     model_definition_full: dict[str, Any],
     feature_dim: int = 16,
@@ -29,48 +413,12 @@ def build_keras_model(
 ):
     tf = _tf()
 
-    def _layer_kind(layer: dict[str, Any], default: str = "Dense") -> str:
-        kind = layer.get("type")
-        if kind is None:
-            kind = layer.get("layer_type")
-        return str(kind or default)
-
-    def _layer_params(layer: dict[str, Any]) -> dict[str, Any]:
-        params = layer.get("params")
-        if isinstance(params, dict):
-            merged = dict(layer)
-            merged.pop("params", None)
-            merged.update(params)
-            return merged
-        return layer
-
-    def _apply_supported_layer(x: Any, layer: dict[str, Any], default_activation: str = "relu") -> Any:
-        layer_type = _layer_kind(layer)
-        p = _layer_params(layer)
-        if layer_type == "Dense":
-            units = int(p.get("units", 32) or 32)
-            activation = str(p.get("activation", default_activation))
-            return tf.keras.layers.Dense(units, activation=activation)(x)
-        if layer_type == "Dropout":
-            rate = float(p.get("rate", 0.2) or 0.2)
-            return tf.keras.layers.Dropout(rate)(x)
-        return x
-
-    arch_raw = model_definition_full.get("architecture_definition")
-    arch: dict[str, Any] = arch_raw if isinstance(arch_raw, dict) else {}
-    used_inputs_value = arch.get("used_inputs", [])
-    branches_value = arch.get("branches", [])
-    shared_layers_value = arch.get("shared_layers", [])
-    output_heads_value = arch.get("output_heads", [])
-    used_inputs_raw = used_inputs_value if isinstance(used_inputs_value, list) else []
-    branches_raw = branches_value if isinstance(branches_value, list) else []
-    shared_layers_raw = shared_layers_value if isinstance(shared_layers_value, list) else []
-    output_heads_raw = output_heads_value if isinstance(output_heads_value, list) else []
-
-    used_inputs = [item for item in used_inputs_raw if isinstance(item, dict)]
-    branches = [item for item in branches_raw if isinstance(item, dict)]
-    shared_layers = [item for item in shared_layers_raw if isinstance(item, dict)]
-    output_heads = [item for item in output_heads_raw if isinstance(item, dict)]
+    arch = _as_dict(model_definition_full.get("architecture_definition"))
+    used_inputs = _as_list_of_dicts(arch.get("used_inputs"))
+    branches = _as_list_of_dicts(arch.get("branches"))
+    merges = _as_list_of_dicts(arch.get("merges"))
+    shared_layers = _as_list_of_dicts(arch.get("shared_layers"))
+    output_heads = _as_list_of_dicts(arch.get("output_heads"))
 
     if not used_inputs:
         used_inputs = [{"input_layer_name": "input_main"}]
@@ -79,79 +427,218 @@ def build_keras_model(
     if not output_heads:
         output_heads = [{"output_layer_name": "output_main"}]
 
-    input_layers = {}
+    input_layers: dict[str, Any] = {}
+    feature_maps: dict[str, Any] = {}
+
     for inp in used_inputs:
-        name = str(inp.get("input_layer_name", "input_main"))
-        dim = feature_dim
-        if isinstance(input_dims_map, dict) and name in input_dims_map:
-            dim = max(1, int(input_dims_map[name]))
-        input_layers[name] = tf.keras.Input(shape=(dim,), name=name)
+        p = _as_dict(inp)
+        name = str(p.get("input_layer_name", "input_main")).strip() or "input_main"
+        source_feature_name = str(p.get("source_feature_name", name)).strip() or name
+        shape = _as_shape_tuple(p.get("shape"))
+        if shape is None:
+            inferred = None
+            if isinstance(input_dims_map, dict):
+                if name in input_dims_map:
+                    inferred = max(1, int(input_dims_map[name]))
+                elif source_feature_name in input_dims_map:
+                    inferred = max(1, int(input_dims_map[source_feature_name]))
+            if inferred is None:
+                inferred = max(1, int(feature_dim))
+            shape = (inferred,)
+        input_tensor = tf.keras.Input(shape=shape, name=name)
+        input_layers[name] = input_tensor
+        feature_maps[name] = input_tensor
+        if source_feature_name not in feature_maps:
+            feature_maps[source_feature_name] = input_tensor
 
     layer_values = list(input_layers.values())
     if len(layer_values) == 1:
-        base = layer_values[0]
+        merged_base = layer_values[0]
     else:
-        base = tf.keras.layers.Concatenate(name="concat_all_inputs")(layer_values)
+        merged_base = tf.keras.layers.Concatenate(name="concat_all_inputs")(layer_values)
+    feature_maps["merged_inputs"] = merged_base
 
     branch_outputs = []
-    feature_maps: dict[str, Any] = {}
     for branch in branches:
-        branch_input_name = str(branch.get("input_layer_name", "")).strip()
-        x = input_layers.get(branch_input_name, base)
-        layers_value = branch.get("layers", [])
-        layers = layers_value if isinstance(layers_value, list) else []
+        branch_p = _as_dict(branch)
+        branch_name = str(branch_p.get("name", branch_p.get("branch_id", ""))).strip()
+        branch_input_name = str(branch_p.get("input_source_layer", branch_p.get("input_layer_name", ""))).strip()
+        x = feature_maps.get(branch_input_name)
+        if x is None:
+            x = input_layers.get(branch_input_name)
+        if x is None:
+            x = merged_base
+
+        layers = _as_list_of_dicts(branch_p.get("layers"))
         for layer in layers:
-            if not isinstance(layer, dict):
-                continue
-            x = _apply_supported_layer(x, layer)
-            fmap_name = str(layer.get("output_feature_map_name", "")).strip()
-            if fmap_name:
-                feature_maps[fmap_name] = x
+            x = _apply_layer(tf, x, layer, feature_maps, default_activation="relu")
+            layer_name = str(_layer_params(layer).get("name", "")).strip()
+            if layer_name:
+                feature_maps[layer_name] = x
+
         branch_outputs.append(x)
-        branch_name = str(branch.get("branch_name", branch.get("branch_id", ""))).strip()
+        output_feature_map_name = str(branch_p.get("output_feature_map_name", "")).strip()
+        if output_feature_map_name:
+            feature_maps[output_feature_map_name] = x
         if branch_name:
             feature_maps[branch_name] = x
 
     if len(branch_outputs) == 1:
         merged = branch_outputs[0]
     else:
-        merged = tf.keras.layers.Concatenate()(branch_outputs)
+        try:
+            merged = tf.keras.layers.Concatenate(name="concat_all_branches")(branch_outputs)
+        except Exception:
+            merged = branch_outputs[0]
+    feature_maps["merged_branches"] = merged
+
+    for merge in merges:
+        merge_p = _layer_params(merge)
+        merge_name = str(merge_p.get("name", "")).strip()
+        merge_type = str(merge_p.get("type", "concatenate")).strip().lower()
+        source_feature_maps = merge_p.get("source_feature_maps")
+        tensors = _get_multi_input_tensors(feature_maps, source_feature_maps)
+        if len(tensors) == 0:
+            tensors = [merged]
+
+        if merge_type == "add":
+            if len(tensors) >= 2:
+                x = tf.keras.layers.Add(name=merge_name or None)(tensors)
+            else:
+                x = tensors[0]
+        elif merge_type == "multiply":
+            if len(tensors) >= 2:
+                x = tf.keras.layers.Multiply(name=merge_name or None)(tensors)
+            else:
+                x = tensors[0]
+        else:
+            if len(tensors) == 1:
+                x = tensors[0]
+            else:
+                x = tf.keras.layers.Concatenate(name=merge_name or None)(tensors)
+
+        for layer in _as_list_of_dicts(merge_p.get("layers_after_merge")):
+            x = _apply_layer(tf, x, layer, feature_maps, default_activation="relu")
+            layer_name = str(_layer_params(layer).get("name", "")).strip()
+            if layer_name:
+                feature_maps[layer_name] = x
+
+        output_feature_map_name = str(merge_p.get("output_feature_map_name", "")).strip()
+        if merge_name:
+            feature_maps[merge_name] = x
+        if output_feature_map_name:
+            feature_maps[output_feature_map_name] = x
+        merged = x
 
     for layer in shared_layers:
         layer_type = _layer_kind(layer)
         if layer_type == "Concatenate":
-            map_names = layer.get("input_source_feature_maps")
-            if isinstance(map_names, list):
-                tensors = [feature_maps.get(str(name), None) for name in map_names]
-                tensors = [tensor for tensor in tensors if tensor is not None]
+            tensors = _get_multi_input_tensors(feature_maps, _layer_params(layer).get("input_source_feature_maps"))
+            if isinstance(tensors, list):
                 if len(tensors) >= 2:
-                    merged = tf.keras.layers.Concatenate(name=str(layer.get("name", "concat_shared")))(tensors)
+                    shared_name = str(_layer_params(layer).get("name", "concat_shared"))
+                    merged = tf.keras.layers.Concatenate(name=shared_name)(tensors)
                     continue
             continue
-        merged = _apply_supported_layer(merged, layer)
+        merged = _apply_layer(tf, merged, layer, feature_maps, default_activation="relu")
+        layer_name = str(_layer_params(layer).get("name", "")).strip()
+        if layer_name:
+            feature_maps[layer_name] = merged
+
+    feature_maps["merged"] = merged
 
     outputs = []
+    output_meta: list[dict[str, str]] = []
     for head in output_heads:
-        out_name = str(head.get("output_layer_name", "output_main"))
-        units = 1
-        if isinstance(output_units_map, dict) and out_name in output_units_map:
-            units = max(1, int(output_units_map[out_name]))
-        head_x = merged
-        head_layers_value = head.get("layers", [])
-        head_layers = head_layers_value if isinstance(head_layers_value, list) else []
+        head_p = _layer_params(head)
+        out_name = str(head_p.get("output_layer_name", "output_main")).strip() or "output_main"
+        maps_to = str(head_p.get("maps_to_target_config_name", "")).strip()
+        source_feature_map = str(head_p.get("source_feature_map", "")).strip()
+        units_raw = head_p.get("units")
+        units = int(units_raw) if units_raw is not None else 0
+        if units <= 0 and isinstance(output_units_map, dict):
+            if out_name in output_units_map:
+                units = max(1, int(output_units_map[out_name]))
+            elif maps_to in output_units_map:
+                units = max(1, int(output_units_map[maps_to]))
+        if units <= 0:
+            units = 1
+
+        head_x = feature_maps.get(source_feature_map, merged) if source_feature_map else merged
+
+        head_layers = _as_list_of_dicts(head_p.get("layers"))
         for layer in head_layers:
-            if not isinstance(layer, dict):
-                continue
-            head_x = _apply_supported_layer(head_x, layer, default_activation="linear")
-        outputs.append(tf.keras.layers.Dense(units, activation="linear", name=out_name)(head_x))
+            head_x = _apply_layer(tf, head_x, layer, feature_maps, default_activation="linear")
+            layer_name = str(_layer_params(layer).get("name", "")).strip()
+            if layer_name:
+                feature_maps[layer_name] = head_x
+
+        activation = str(head_p.get("activation", "linear"))
+        final_dense = tf.keras.layers.Dense(
+            units,
+            activation=activation,
+            name=out_name,
+            use_bias=bool(head_p.get("use_bias", True)),
+            kernel_initializer=_resolve_initializer(tf, head_p.get("kernel_initializer")),
+            bias_initializer=_resolve_initializer(tf, head_p.get("bias_initializer")),
+            kernel_regularizer=_resolve_regularizer(tf, head_p.get("kernel_regularizer")),
+            bias_regularizer=_resolve_regularizer(tf, head_p.get("bias_regularizer")),
+            activity_regularizer=_resolve_regularizer(tf, head_p.get("activity_regularizer")),
+        )(head_x)
+        outputs.append(final_dense)
+        output_meta.append({"output_layer_name": out_name, "maps_to_target_config_name": maps_to})
 
     model = tf.keras.Model(inputs=list(input_layers.values()), outputs=outputs if len(outputs) > 1 else outputs[0])
-    if len(model.output_names) <= 1:
-        model.compile(optimizer="adam", loss="mse", metrics=["mae"])
+
+    training_config = _as_dict(model_definition_full.get("training_config"))
+    compile_config = _as_dict(training_config.get("compile"))
+    optimizer = _resolve_optimizer(tf, compile_config.get("optimizer", "Adam"))
+
+    runtime_output_cfg = _as_list_of_dicts(model_definition_full.get("output_targets_config_runtime"))
+    runtime_by_target: dict[str, dict[str, Any]] = {}
+    runtime_by_layer: dict[str, dict[str, Any]] = {}
+    for item in runtime_output_cfg:
+        target_name = str(item.get("target_name", "")).strip()
+        default_layer_name = str(item.get("default_output_layer_name", "")).strip()
+        if target_name:
+            runtime_by_target[target_name] = item
+        if default_layer_name:
+            runtime_by_layer[default_layer_name] = item
+
+    if len(model.output_names) == 1:
+        output_name = model.output_names[0]
+        mapped = next((m for m in output_meta if m.get("output_layer_name") == output_name), {})
+        maps_to = str(mapped.get("maps_to_target_config_name", "")).strip()
+        cfg = runtime_by_target.get(maps_to) or runtime_by_layer.get(output_name) or {}
+        loss = str(cfg.get("loss_function", "mse"))
+        metrics_cfg = cfg.get("metrics", ["mae"])
+        if isinstance(metrics_cfg, str):
+            metrics = [metrics_cfg]
+        elif isinstance(metrics_cfg, list) and metrics_cfg:
+            metrics = [str(item) for item in metrics_cfg]
+        else:
+            metrics = ["mae"]
+        loss_weight = float(cfg.get("loss_weight", 1.0) or 1.0)
+        model.compile(optimizer=optimizer, loss=loss, metrics=metrics, loss_weights=loss_weight)
     else:
-        losses = {name: "mse" for name in model.output_names}
-        metrics = {name: ["mae"] for name in model.output_names}
-        model.compile(optimizer="adam", loss=losses, metrics=metrics)
+        losses: dict[str, Any] = {}
+        metrics_map: dict[str, list[str]] = {}
+        loss_weights: dict[str, float] = {}
+        for output_name in model.output_names:
+            mapped = next((m for m in output_meta if m.get("output_layer_name") == output_name), {})
+            maps_to = str(mapped.get("maps_to_target_config_name", "")).strip()
+            cfg = runtime_by_target.get(maps_to) or runtime_by_layer.get(output_name) or {}
+            losses[output_name] = str(cfg.get("loss_function", "mse"))
+            metrics_cfg = cfg.get("metrics", ["mae"])
+            if isinstance(metrics_cfg, str):
+                metrics_map[output_name] = [metrics_cfg]
+            elif isinstance(metrics_cfg, list) and metrics_cfg:
+                metrics_map[output_name] = [str(item) for item in metrics_cfg]
+            else:
+                metrics_map[output_name] = ["mae"]
+            loss_weights[output_name] = float(cfg.get("loss_weight", 1.0) or 1.0)
+        model.compile(optimizer=optimizer, loss=losses, metrics=metrics_map, loss_weights=loss_weights)
+
     return model, list(input_layers.keys()), list(model.output_names)
 
 
@@ -168,15 +655,30 @@ def run_smoke_fit(model_definition_full: dict[str, Any], smoke_batches: int = 3,
     model, input_names, output_names = build_keras_model(model_definition_full, feature_dim=feature_dim)
 
     n = max(1, int(smoke_batches)) * max(2, int(batch_size))
-    x_data = {name: np.random.randn(n, feature_dim).astype("float32") for name in input_names}
+    x_data: dict[str, np.ndarray] = {}
+    for name, tensor in zip(input_names, model.inputs):
+        dims: list[int] = []
+        for dim in tensor.shape[1:]:
+            if dim is None:
+                dims.append(max(1, int(feature_dim)))
+            else:
+                dims.append(max(1, int(dim)))
+        if not dims:
+            dims = [max(1, int(feature_dim))]
+        x_data[name] = np.random.randn(n, *dims).astype("float32")
 
     if len(model.outputs) == 1:
-        y_data = np.random.randn(n, 1).astype("float32")
+        out_name = model.output_names[0]
+        out_layer = model.get_layer(out_name)
+        units = int(getattr(out_layer, "units", 1) or 1)
+        y_data = np.random.randn(n, units).astype("float32")
     else:
-        y_data = {}
-        for tensor, name in zip(model.outputs, output_names):
-            units = int(tensor.shape[-1] or 1)
-            y_data[name] = np.random.randn(n, units).astype("float32")
+        y_data_list: list[np.ndarray] = []
+        for name in output_names:
+            out_layer = model.get_layer(name)
+            units = int(getattr(out_layer, "units", 1) or 1)
+            y_data_list.append(np.random.randn(n, units).astype("float32"))
+        y_data = y_data_list
 
     history = model.fit(x_data, y_data, epochs=1, batch_size=batch_size, verbose=0)
     tf.keras.backend.clear_session()
