@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import tempfile
 from typing import Any
 
 import numpy as np
@@ -78,3 +80,23 @@ def run_smoke_fit(model_definition_full: dict[str, Any], smoke_batches: int = 3,
     loss = float(history.history.get("loss", [0.0])[-1]) if history.history else 0.0
     mae = float(history.history.get("mae", [0.0])[-1]) if history.history else 0.0
     return {"loss": loss, "mae": mae}
+
+
+def render_model_plot_png_base64(model_definition_full: dict[str, Any], feature_dim: int = 16) -> str | None:
+    tf = _tf()
+    try:
+        model, _, _ = build_keras_model(model_definition_full, feature_dim=feature_dim)
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=True) as tmp:
+            tf.keras.utils.plot_model(model, to_file=tmp.name, show_shapes=True, show_dtype=False)
+            tmp.seek(0)
+            raw = tmp.read()
+        tf.keras.backend.clear_session()
+        if not raw:
+            return None
+        return base64.b64encode(raw).decode("ascii")
+    except Exception:
+        try:
+            tf.keras.backend.clear_session()
+        except Exception:
+            pass
+        return None

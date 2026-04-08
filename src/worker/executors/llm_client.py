@@ -115,13 +115,20 @@ def generate_candidate_via_openai(api_key: str, model: str, prompt: str, endpoin
     except HTTPError as error:
         body = error.read().decode("utf-8", errors="ignore")
         raise RuntimeError(f"OpenAI HTTP {error.code}: {body}") from error
-    payload = json.loads(content)
+    api_payload = json.loads(content)
     message = (
-        payload.get("choices", [{}])[0]
+        api_payload.get("choices", [{}])[0]
         .get("message", {})
         .get("content", "")
     )
-    return _extract_json(str(message))
+    parsed = _extract_json(str(message))
+    if isinstance(parsed, dict):
+        parsed["_llm_raw_response"] = api_payload
+        parsed["_llm_response_text"] = str(message)
+        parsed["_llm_prompt_text"] = prompt
+        parsed["_llm_model"] = model
+        parsed["_llm_endpoint"] = endpoint
+    return parsed
 
 
 def repair_model_definition_via_openai(

@@ -69,7 +69,7 @@ def _build_prompt_from_v2_builder(payload_context: dict[str, Any]) -> str:
     return prompt
 
 
-def _candidate_from_llm(candidate_id: str, payload_context: dict[str, Any]) -> tuple[dict, dict] | None:
+def _candidate_from_llm(candidate_id: str, payload_context: dict[str, Any]) -> tuple[dict, dict, dict[str, Any]] | None:
     settings = load_settings()
     if settings.llm_mode != "openai_chat" or settings.llm_api_key.strip() == "":
         return None
@@ -89,7 +89,15 @@ def _candidate_from_llm(candidate_id: str, payload_context: dict[str, Any]) -> t
     if not full or not summary:
         return None
     full["model_id"] = candidate_id
-    return full, summary
+    llm_metadata = {
+        "provider": "openai_chat",
+        "model": payload.get("_llm_model", ""),
+        "endpoint": payload.get("_llm_endpoint", ""),
+        "prompt_text": payload.get("_llm_prompt_text", ""),
+        "response_text": payload.get("_llm_response_text", ""),
+        "raw_response": payload.get("_llm_raw_response", {}),
+    }
+    return full, summary, llm_metadata
 
 
 def execute_generate_candidate(payload: dict) -> dict:
@@ -100,14 +108,19 @@ def execute_generate_candidate(payload: dict) -> dict:
         llm_out = _candidate_from_llm(candidate_id, payload)
         if llm_out is None:
             model_full, model_summary = _fallback_definition(candidate_id)
+            llm_metadata = {
+                "provider": "fallback",
+                "reason": "llm_unavailable_or_invalid",
+            }
         else:
-            model_full, model_summary = llm_out
+            model_full, model_summary, llm_metadata = llm_out
         candidates.append(
             {
                 "candidate_id": candidate_id,
                 "fingerprint": uuid4().hex,
                 "model_definition_full": model_full,
                 "model_definition_summary": model_summary,
+                "llm_metadata": llm_metadata,
             }
         )
     return {"status": "completed", "candidates": candidates}

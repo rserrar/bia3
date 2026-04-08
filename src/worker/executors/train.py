@@ -1,9 +1,11 @@
 from uuid import uuid4
+import time
 
-from .model_runtime import run_smoke_fit
+from .model_runtime import run_smoke_fit, render_model_plot_png_base64
 
 
 def execute_train_model(payload: dict) -> dict:
+    started_at = time.time()
     candidate_id = str(payload.get("candidate_id", "")).strip() or "unknown"
     model_id = f"mdl_{uuid4().hex[:12]}"
     training_kpis = {
@@ -32,12 +34,24 @@ def execute_train_model(payload: dict) -> dict:
                 },
             }
 
-    return {
+    duration_sec = round(time.time() - started_at, 4)
+    plot_png_base64 = render_model_plot_png_base64(model_definition_full, feature_dim=int(payload.get("feature_dim", 16) or 16)) if model_definition_full else None
+
+    result = {
         "status": "completed",
         "model_id": model_id,
         "training_kpis": training_kpis,
+        "training_stats": {
+            "duration_sec": duration_sec,
+            "smoke_batches": int(payload.get("train_smoke_batches", 5) or 5),
+            "feature_dim": int(payload.get("feature_dim", 16) or 16),
+            "batch_size": int(payload.get("batch_size", 16) or 16),
+        },
         "artifact_path": f"storage/artifacts/models/{model_id}/trained/model.weights.h5",
         "checkpoint_path": f"storage/artifacts/models/{model_id}/checkpoints/last.weights.h5",
         "candidate_id": candidate_id,
         "revision": 1,
     }
+    if plot_png_base64:
+        result["plot_model_png_base64"] = plot_png_base64
+    return result
