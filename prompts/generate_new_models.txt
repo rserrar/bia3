@@ -9,6 +9,39 @@ Regles obligatories:
 - `maps_to_target_config_name` ha de coincidir EXACTAMENT amb un target disponible (no inventar noms): {{allowed_target_names_csv}}
 - Evita duplicar models recents i variants trivials.
 
+Format JSON esperat (canonic):
+- `model_definition_full.architecture_definition.branches[].layers[]` ha d'usar `type` i `params`.
+- Exemple de capa valida: `{ "type": "Dense", "params": { "units": 64, "activation": "relu" } }`
+- `model_definition_summary` ha de ser un objecte curt amb 2-6 camps de resum.
+
+Exemple minim de resposta valida:
+{
+  "model_definition_full": {
+    "architecture_definition": {
+      "used_inputs": [
+        { "input_layer_name": "input_prices_last_100", "source_feature_name": "prices_hist_last_100", "shape": [100] }
+      ],
+      "branches": [
+        {
+          "branch_id": "b1",
+          "layers": [
+            { "type": "Dense", "params": { "units": 64, "activation": "relu" } },
+            { "type": "Dense", "params": { "units": 32, "activation": "relu" } }
+          ]
+        }
+      ],
+      "output_heads": [
+        { "output_layer_name": "output_stop_loss", "maps_to_target_config_name": "stop_loss_prediction" },
+        { "output_layer_name": "output_take_profit", "maps_to_target_config_name": "take_profit_prediction" }
+      ]
+    }
+  },
+  "model_definition_summary": {
+    "kind": "dense_baseline",
+    "expected_behavior": "stable"
+  }
+}
+
 Inputs disponibles:
 {{available_inputs_description}}
 

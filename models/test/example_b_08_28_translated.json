@@ -1,0 +1,442 @@
+{
+  "model_id": "example_b_08_28_translated",
+  "version": "1.0.0",
+  "description": "Traduccio al format JSON canonic del model b_08_28: camins micro/mid/long/dilatats, informacio extra i fusio final multi-sortida.",
+  "architecture_definition": {
+    "used_inputs": [
+      {
+        "input_layer_name": "input_prices_full_800",
+        "source_feature_name": "prices_hist_full_800",
+        "shape": [
+          800
+        ]
+      },
+      {
+        "input_layer_name": "input_last_price",
+        "source_feature_name": "last_closing_price_feature",
+        "shape": [
+          1
+        ]
+      },
+      {
+        "input_layer_name": "input_extra_data",
+        "source_feature_name": "extra_data_details",
+        "shape": [
+          9
+        ]
+      },
+      {
+        "input_layer_name": "input_min_hist_800",
+        "source_feature_name": "min_prices_hist_800",
+        "shape": [
+          800
+        ]
+      },
+      {
+        "input_layer_name": "input_max_hist_800",
+        "source_feature_name": "max_prices_hist_800",
+        "shape": [
+          800
+        ]
+      },
+      {
+        "input_layer_name": "input_prices_last_100",
+        "source_feature_name": "prices_hist_last_100",
+        "shape": [
+          100
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "micro_structure_path",
+        "input_source_layer": "input_prices_last_100",
+        "layers": [
+          {
+            "type": "Reshape",
+            "target_shape": [
+              100,
+              1
+            ],
+            "name": "reshape_100"
+          },
+          {
+            "type": "SeparableConv1D",
+            "filters": 32,
+            "kernel_size": 3,
+            "activation": "relu",
+            "padding": "same",
+            "name": "sep_conv_micro"
+          },
+          {
+            "type": "BatchNormalization",
+            "name": "bn_micro"
+          },
+          {
+            "type": "GlobalMaxPooling1D",
+            "name": "gmp_micro"
+          }
+        ],
+        "output_feature_map_name": "micro_features"
+      },
+      {
+        "name": "mid_momentum_path",
+        "input_source_layer": "input_prices_full_800",
+        "layers": [
+          {
+            "type": "Reshape",
+            "target_shape": [
+              800,
+              1
+            ],
+            "name": "reshape_800_mid"
+          },
+          {
+            "type": "Conv1D",
+            "filters": 16,
+            "kernel_size": 20,
+            "strides": 4,
+            "activation": "swish",
+            "padding": "same",
+            "name": "conv_mid_mom"
+          },
+          {
+            "type": "GlobalAveragePooling1D",
+            "name": "gap_mid_mom"
+          }
+        ],
+        "output_feature_map_name": "mid_mom_features"
+      },
+      {
+        "name": "long_momentum_path",
+        "input_source_layer": "input_prices_full_800",
+        "layers": [
+          {
+            "type": "Reshape",
+            "target_shape": [
+              800,
+              1
+            ],
+            "name": "reshape_800_long"
+          },
+          {
+            "type": "Conv1D",
+            "filters": 16,
+            "kernel_size": 60,
+            "strides": 4,
+            "activation": "swish",
+            "padding": "same",
+            "name": "conv_long_mom"
+          },
+          {
+            "type": "GlobalAveragePooling1D",
+            "name": "gap_long_mom"
+          }
+        ],
+        "output_feature_map_name": "long_mom_features"
+      },
+      {
+        "name": "dilated_cycle_path",
+        "input_source_layer": "input_prices_full_800",
+        "layers": [
+          {
+            "type": "Reshape",
+            "target_shape": [
+              800,
+              1
+            ],
+            "name": "reshape_800_dilated"
+          },
+          {
+            "type": "Conv1D",
+            "filters": 16,
+            "kernel_size": 3,
+            "dilation_rate": 4,
+            "activation": "swish",
+            "padding": "same",
+            "name": "conv_dilated"
+          },
+          {
+            "type": "GlobalAveragePooling1D",
+            "name": "gap_dilated"
+          }
+        ],
+        "output_feature_map_name": "dilated_features"
+      },
+      {
+        "name": "volatility_min_path",
+        "input_source_layer": "input_min_hist_800",
+        "layers": [
+          {
+            "type": "Reshape",
+            "target_shape": [
+              800,
+              1
+            ],
+            "name": "reshape_min"
+          },
+          {
+            "type": "Conv1D",
+            "filters": 16,
+            "kernel_size": 10,
+            "strides": 5,
+            "activation": "relu",
+            "padding": "same",
+            "name": "conv_vol_min"
+          },
+          {
+            "type": "GlobalAveragePooling1D",
+            "name": "gap_vol_min"
+          }
+        ],
+        "output_feature_map_name": "vol_min_features"
+      },
+      {
+        "name": "volatility_max_path",
+        "input_source_layer": "input_max_hist_800",
+        "layers": [
+          {
+            "type": "Reshape",
+            "target_shape": [
+              800,
+              1
+            ],
+            "name": "reshape_max"
+          },
+          {
+            "type": "Conv1D",
+            "filters": 16,
+            "kernel_size": 10,
+            "strides": 5,
+            "activation": "relu",
+            "padding": "same",
+            "name": "conv_vol_max"
+          },
+          {
+            "type": "GlobalAveragePooling1D",
+            "name": "gap_vol_max"
+          }
+        ],
+        "output_feature_map_name": "vol_max_features"
+      },
+      {
+        "name": "extra_info_path",
+        "input_source_layer": "input_extra_data",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 16,
+            "activation": "swish",
+            "name": "dense_extra_1"
+          },
+          {
+            "type": "Dense",
+            "units": 16,
+            "activation": "swish",
+            "name": "dense_extra_2"
+          }
+        ],
+        "output_feature_map_name": "extra_features"
+      },
+      {
+        "name": "last_price_path",
+        "input_source_layer": "input_last_price",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 16,
+            "activation": "swish",
+            "name": "dense_last_1"
+          }
+        ],
+        "output_feature_map_name": "last_price_features"
+      },
+      {
+        "name": "final_fusion_path",
+        "input_source_layer": "input_extra_data",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 32,
+            "name": "dense_from_micro",
+            "explicit_input_source_feature_map": "micro_features"
+          },
+          {
+            "type": "Dense",
+            "units": 32,
+            "name": "dense_from_mid",
+            "explicit_input_source_feature_map": "mid_mom_features"
+          },
+          {
+            "type": "Add",
+            "name": "add_1",
+            "input_source_feature_maps": [
+              "dense_from_micro",
+              "dense_from_mid"
+            ]
+          },
+          {
+            "type": "Dense",
+            "units": 32,
+            "name": "dense_from_long",
+            "explicit_input_source_feature_map": "long_mom_features"
+          },
+          {
+            "type": "Add",
+            "name": "add_2",
+            "input_source_feature_maps": [
+              "add_1",
+              "dense_from_long"
+            ]
+          },
+          {
+            "type": "Dense",
+            "units": 32,
+            "name": "dense_from_dilated",
+            "explicit_input_source_feature_map": "dilated_features"
+          },
+          {
+            "type": "Add",
+            "name": "add_3",
+            "input_source_feature_maps": [
+              "add_2",
+              "dense_from_dilated"
+            ]
+          },
+          {
+            "type": "Dense",
+            "units": 32,
+            "name": "dense_from_vol_min",
+            "explicit_input_source_feature_map": "vol_min_features"
+          },
+          {
+            "type": "Add",
+            "name": "add_4",
+            "input_source_feature_maps": [
+              "add_3",
+              "dense_from_vol_min"
+            ]
+          },
+          {
+            "type": "Dense",
+            "units": 32,
+            "name": "dense_from_vol_max",
+            "explicit_input_source_feature_map": "vol_max_features"
+          },
+          {
+            "type": "Add",
+            "name": "add_5",
+            "input_source_feature_maps": [
+              "add_4",
+              "dense_from_vol_max"
+            ]
+          },
+          {
+            "type": "Dense",
+            "units": 32,
+            "name": "dense_from_extra",
+            "explicit_input_source_feature_map": "extra_features"
+          },
+          {
+            "type": "Add",
+            "name": "add_6",
+            "input_source_feature_maps": [
+              "add_5",
+              "dense_from_extra"
+            ]
+          },
+          {
+            "type": "Dense",
+            "units": 32,
+            "name": "dense_from_last_price",
+            "explicit_input_source_feature_map": "last_price_features"
+          },
+          {
+            "type": "Add",
+            "name": "add_7",
+            "input_source_feature_maps": [
+              "add_6",
+              "dense_from_last_price"
+            ]
+          },
+          {
+            "type": "LayerNormalization",
+            "name": "ln_fusion"
+          },
+          {
+            "type": "Dense",
+            "units": 320,
+            "activation": "swish",
+            "name": "dense_fused_1"
+          },
+          {
+            "type": "Dropout",
+            "rate": 0.3,
+            "name": "dropout_fusion"
+          },
+          {
+            "type": "Dense",
+            "units": 128,
+            "activation": "swish",
+            "name": "dense_fused_2"
+          }
+        ],
+        "output_feature_map_name": "final_representation"
+      }
+    ],
+    "output_heads": [
+      {
+        "output_layer_name": "output_reconstruct_100",
+        "maps_to_target_config_name": "reconstruct_prices_last_100_target",
+        "source_feature_map": "final_representation"
+      },
+      {
+        "output_layer_name": "output_close_7d",
+        "maps_to_target_config_name": "closing_prices_7_days_prediction",
+        "source_feature_map": "final_representation"
+      },
+      {
+        "output_layer_name": "output_min_7d",
+        "maps_to_target_config_name": "min_7_days_prediction",
+        "source_feature_map": "final_representation"
+      },
+      {
+        "output_layer_name": "output_max_7d",
+        "maps_to_target_config_name": "max_7_days_prediction",
+        "source_feature_map": "final_representation"
+      },
+      {
+        "output_layer_name": "output_metrics_4",
+        "maps_to_target_config_name": "price_change_metrics_4_vals",
+        "source_feature_map": "final_representation"
+      },
+      {
+        "output_layer_name": "output_stop_loss",
+        "maps_to_target_config_name": "stop_loss_prediction",
+        "source_feature_map": "final_representation"
+      },
+      {
+        "output_layer_name": "output_take_profit",
+        "maps_to_target_config_name": "take_profit_prediction",
+        "source_feature_map": "final_representation"
+      }
+    ]
+  },
+  "training_config": {
+    "compile": {
+      "optimizer": {
+        "type": "Nadam"
+      },
+      "dynamic_loss_config_source": "output_targets_config"
+    },
+    "fit": {
+      "epochs": 3,
+      "batch_size": 32
+    }
+  },
+  "model_definition_summary": {
+    "kind": "translated_reference",
+    "source": "b_08_28",
+    "focus": "multi_path_fusion"
+  }
+}

@@ -7,6 +7,8 @@ Objectiu: generar models tabulars per regressio multisalida que compilin i pugui
 - `architecture_definition.used_inputs`: llista de diccionaris amb `input_layer_name`.
 - `architecture_definition.branches`: llista de branques amb `layers`.
 - `architecture_definition.output_heads`: minim 1 sortida amb `output_layer_name`.
+- Dins `branches[].layers[]`, usa format canonic `{"type": "Dense", "params": {...}}`.
+- Si una sortida te `maps_to_target_config_name`, ha de ser exactament un target configurat.
 
 ## Bones practiques
 

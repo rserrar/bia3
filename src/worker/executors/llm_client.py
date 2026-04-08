@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any
 from urllib import request as urlrequest
 from urllib.error import HTTPError
 
@@ -45,7 +46,7 @@ def _extract_first_json_payload(text: str) -> str:
     return _extract_balanced_payload(text, start, opening, closing)
 
 
-def _extract_json(text: str) -> dict:
+def _extract_json(text: str) -> Any:
     raw = text.strip()
     if raw.startswith("```"):
         raw = raw.strip("`")
@@ -53,10 +54,19 @@ def _extract_json(text: str) -> dict:
             raw = raw[4:]
     extracted = _extract_first_json_payload(raw)
     parsed = json.loads(extracted)
-    return parsed if isinstance(parsed, dict) else {}
+    if isinstance(parsed, (dict, list)):
+        return parsed
+    return {}
 
 
-def normalize_llm_candidate_payload(payload: dict) -> dict:
+def normalize_llm_candidate_payload(payload: dict | list) -> dict:
+    if isinstance(payload, dict):
+        parsed_payload: Any = payload.get("_llm_parsed_payload")
+        if isinstance(parsed_payload, (dict, list)):
+            payload = parsed_payload
+    if isinstance(payload, list):
+        first = payload[0] if payload else {}
+        payload = first if isinstance(first, dict) else {}
     if not isinstance(payload, dict):
         return {}
 
@@ -85,7 +95,7 @@ def normalize_llm_candidate_payload(payload: dict) -> dict:
     return {}
 
 
-def generate_candidate_via_openai(api_key: str, model: str, prompt: str, endpoint: str) -> dict:
+def generate_candidate_via_openai(api_key: str, model: str, prompt: str, endpoint: str) -> dict[str, Any]:
     print(f"[INFO] LLM request -> endpoint={endpoint} model={model}", flush=True)
     body = {
         "model": model,
@@ -128,7 +138,15 @@ def generate_candidate_via_openai(api_key: str, model: str, prompt: str, endpoin
         parsed["_llm_prompt_text"] = prompt
         parsed["_llm_model"] = model
         parsed["_llm_endpoint"] = endpoint
-    return parsed
+        return parsed
+    return {
+        "_llm_parsed_payload": parsed,
+        "_llm_raw_response": api_payload,
+        "_llm_response_text": str(message),
+        "_llm_prompt_text": prompt,
+        "_llm_model": model,
+        "_llm_endpoint": endpoint,
+    }
 
 
 def repair_model_definition_via_openai(

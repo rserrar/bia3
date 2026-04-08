@@ -28,10 +28,49 @@ def build_keras_model(
     output_units_map: dict[str, int] | None = None,
 ):
     tf = _tf()
-    arch = model_definition_full.get("architecture_definition") if isinstance(model_definition_full.get("architecture_definition"), dict) else {}
-    used_inputs = arch.get("used_inputs") if isinstance(arch.get("used_inputs"), list) and arch.get("used_inputs") else []
-    branches = arch.get("branches") if isinstance(arch.get("branches"), list) and arch.get("branches") else []
-    output_heads = arch.get("output_heads") if isinstance(arch.get("output_heads"), list) and arch.get("output_heads") else []
+
+    def _layer_kind(layer: dict[str, Any], default: str = "Dense") -> str:
+        kind = layer.get("type")
+        if kind is None:
+            kind = layer.get("layer_type")
+        return str(kind or default)
+
+    def _layer_params(layer: dict[str, Any]) -> dict[str, Any]:
+        params = layer.get("params")
+        if isinstance(params, dict):
+            merged = dict(layer)
+            merged.pop("params", None)
+            merged.update(params)
+            return merged
+        return layer
+
+    def _apply_supported_layer(x: Any, layer: dict[str, Any], default_activation: str = "relu") -> Any:
+        layer_type = _layer_kind(layer)
+        p = _layer_params(layer)
+        if layer_type == "Dense":
+            units = int(p.get("units", 32) or 32)
+            activation = str(p.get("activation", default_activation))
+            return tf.keras.layers.Dense(units, activation=activation)(x)
+        if layer_type == "Dropout":
+            rate = float(p.get("rate", 0.2) or 0.2)
+            return tf.keras.layers.Dropout(rate)(x)
+        return x
+
+    arch_raw = model_definition_full.get("architecture_definition")
+    arch: dict[str, Any] = arch_raw if isinstance(arch_raw, dict) else {}
+    used_inputs_value = arch.get("used_inputs", [])
+    branches_value = arch.get("branches", [])
+    shared_layers_value = arch.get("shared_layers", [])
+    output_heads_value = arch.get("output_heads", [])
+    used_inputs_raw = used_inputs_value if isinstance(used_inputs_value, list) else []
+    branches_raw = branches_value if isinstance(branches_value, list) else []
+    shared_layers_raw = shared_layers_value if isinstance(shared_layers_value, list) else []
+    output_heads_raw = output_heads_value if isinstance(output_heads_value, list) else []
+
+    used_inputs = [item for item in used_inputs_raw if isinstance(item, dict)]
+    branches = [item for item in branches_raw if isinstance(item, dict)]
+    shared_layers = [item for item in shared_layers_raw if isinstance(item, dict)]
+    output_heads = [item for item in output_heads_raw if isinstance(item, dict)]
 
     if not used_inputs:
         used_inputs = [{"input_layer_name": "input_main"}]
@@ -53,25 +92,43 @@ def build_keras_model(
         base = layer_values[0]
     else:
         base = tf.keras.layers.Concatenate(name="concat_all_inputs")(layer_values)
+
     branch_outputs = []
+    feature_maps: dict[str, Any] = {}
     for branch in branches:
-        x = base
-        layers = branch.get("layers") if isinstance(branch.get("layers"), list) else []
+        branch_input_name = str(branch.get("input_layer_name", "")).strip()
+        x = input_layers.get(branch_input_name, base)
+        layers_value = branch.get("layers", [])
+        layers = layers_value if isinstance(layers_value, list) else []
         for layer in layers:
             if not isinstance(layer, dict):
                 continue
-            layer_type = str(layer.get("type", "Dense"))
-            params = layer.get("params") if isinstance(layer.get("params"), dict) else {}
-            if layer_type == "Dense":
-                units = int(params.get("units", 32) or 32)
-                activation = str(params.get("activation", "relu"))
-                x = tf.keras.layers.Dense(units, activation=activation)(x)
+            x = _apply_supported_layer(x, layer)
+            fmap_name = str(layer.get("output_feature_map_name", "")).strip()
+            if fmap_name:
+                feature_maps[fmap_name] = x
         branch_outputs.append(x)
+        branch_name = str(branch.get("branch_name", branch.get("branch_id", ""))).strip()
+        if branch_name:
+            feature_maps[branch_name] = x
 
     if len(branch_outputs) == 1:
         merged = branch_outputs[0]
     else:
         merged = tf.keras.layers.Concatenate()(branch_outputs)
+
+    for layer in shared_layers:
+        layer_type = _layer_kind(layer)
+        if layer_type == "Concatenate":
+            map_names = layer.get("input_source_feature_maps")
+            if isinstance(map_names, list):
+                tensors = [feature_maps.get(str(name), None) for name in map_names]
+                tensors = [tensor for tensor in tensors if tensor is not None]
+                if len(tensors) >= 2:
+                    merged = tf.keras.layers.Concatenate(name=str(layer.get("name", "concat_shared")))(tensors)
+                    continue
+            continue
+        merged = _apply_supported_layer(merged, layer)
 
     outputs = []
     for head in output_heads:
@@ -79,11 +136,23 @@ def build_keras_model(
         units = 1
         if isinstance(output_units_map, dict) and out_name in output_units_map:
             units = max(1, int(output_units_map[out_name]))
-        outputs.append(tf.keras.layers.Dense(units, activation="linear", name=out_name)(merged))
+        head_x = merged
+        head_layers_value = head.get("layers", [])
+        head_layers = head_layers_value if isinstance(head_layers_value, list) else []
+        for layer in head_layers:
+            if not isinstance(layer, dict):
+                continue
+            head_x = _apply_supported_layer(head_x, layer, default_activation="linear")
+        outputs.append(tf.keras.layers.Dense(units, activation="linear", name=out_name)(head_x))
 
     model = tf.keras.Model(inputs=list(input_layers.values()), outputs=outputs if len(outputs) > 1 else outputs[0])
-    model.compile(optimizer="adam", loss="mse", metrics=["mae"])
-    return model, list(input_layers.keys()), [getattr(o, "name", "output") for o in (outputs if outputs else [model.output])]
+    if len(model.output_names) <= 1:
+        model.compile(optimizer="adam", loss="mse", metrics=["mae"])
+    else:
+        losses = {name: "mse" for name in model.output_names}
+        metrics = {name: ["mae"] for name in model.output_names}
+        model.compile(optimizer="adam", loss=losses, metrics=metrics)
+    return model, list(input_layers.keys()), list(model.output_names)
 
 
 def _sanitize_real_array(arr: np.ndarray, label: str) -> np.ndarray:
@@ -104,12 +173,22 @@ def run_smoke_fit(model_definition_full: dict[str, Any], smoke_batches: int = 3,
     if len(model.outputs) == 1:
         y_data = np.random.randn(n, 1).astype("float32")
     else:
-        y_data = {name.split(":")[0]: np.random.randn(n, 1).astype("float32") for name in output_names}
+        y_data = {}
+        for tensor, name in zip(model.outputs, output_names):
+            units = int(tensor.shape[-1] or 1)
+            y_data[name] = np.random.randn(n, units).astype("float32")
 
     history = model.fit(x_data, y_data, epochs=1, batch_size=batch_size, verbose=0)
     tf.keras.backend.clear_session()
     loss = float(history.history.get("loss", [0.0])[-1]) if history.history else 0.0
-    mae = float(history.history.get("mae", [0.0])[-1]) if history.history else 0.0
+    mae = 0.0
+    if history.history:
+        if "mae" in history.history:
+            mae = float(history.history.get("mae", [0.0])[-1])
+        else:
+            mae_keys = sorted([key for key in history.history.keys() if key.endswith("_mae")])
+            if mae_keys:
+                mae = float(np.mean([float(history.history[key][-1]) for key in mae_keys]))
     return {"loss": loss, "mae": mae}
 
 
@@ -145,9 +224,15 @@ def run_smoke_fit_real_data(
 ) -> dict[str, Any]:
     tf = _tf()
     exp = load_experiment_config(experiment_config_file)
-    input_cfg = exp.get("input_features_config") if isinstance(exp.get("input_features_config"), list) else []
-    output_cfg = exp.get("output_targets_config") if isinstance(exp.get("output_targets_config"), list) else []
-    data_paths = exp.get("data_paths") if isinstance(exp.get("data_paths"), dict) else {}
+    input_cfg_value = exp.get("input_features_config", [])
+    output_cfg_value = exp.get("output_targets_config", [])
+    data_paths_value = exp.get("data_paths", {})
+    input_cfg_raw = input_cfg_value if isinstance(input_cfg_value, list) else []
+    output_cfg_raw = output_cfg_value if isinstance(output_cfg_value, list) else []
+    data_paths_raw = data_paths_value if isinstance(data_paths_value, dict) else {}
+    input_cfg = [item for item in input_cfg_raw if isinstance(item, dict)]
+    output_cfg = [item for item in output_cfg_raw if isinstance(item, dict)]
+    data_paths = {str(k): v for k, v in data_paths_raw.items()}
 
     raw = load_all_raw_data_sources(
         data_paths,
@@ -162,9 +247,14 @@ def run_smoke_fit_real_data(
     input_dims_map: dict[str, int] = {}
     output_units_map: dict[str, int] = {}
 
-    arch = model_definition_full.get("architecture_definition") if isinstance(model_definition_full.get("architecture_definition"), dict) else {}
-    used_inputs = arch.get("used_inputs") if isinstance(arch.get("used_inputs"), list) else []
-    output_heads = arch.get("output_heads") if isinstance(arch.get("output_heads"), list) else []
+    arch_raw = model_definition_full.get("architecture_definition")
+    arch: dict[str, Any] = arch_raw if isinstance(arch_raw, dict) else {}
+    used_inputs_value = arch.get("used_inputs", [])
+    output_heads_value = arch.get("output_heads", [])
+    used_inputs_raw = used_inputs_value if isinstance(used_inputs_value, list) else []
+    output_heads_raw = output_heads_value if isinstance(output_heads_value, list) else []
+    used_inputs = [item for item in used_inputs_raw if isinstance(item, dict)]
+    output_heads = [item for item in output_heads_raw if isinstance(item, dict)]
 
     output_cfg_map: dict[str, int] = {}
     output_alias_to_target: dict[str, str] = {}
@@ -179,8 +269,6 @@ def run_smoke_fit_real_data(
         if base:
             data_path_alias_to_source[base] = source_key
     for item in output_cfg:
-        if not isinstance(item, dict):
-            continue
         target_name = str(item.get("target_name", "")).strip()
         layer_name = str(item.get("default_output_layer_name", "")).strip()
         source_csv_key = str(item.get("source_csv_key", "")).strip()
@@ -198,17 +286,14 @@ def run_smoke_fit_real_data(
                 output_alias_to_target[source_csv_key] = target_name
 
     for inp in used_inputs:
-        if not isinstance(inp, dict):
-            continue
         input_name = str(inp.get("input_layer_name", "")).strip()
         source_feature_name = str(inp.get("source_feature_name", input_name)).strip()
         arr = all_data.get(source_feature_name)
-        if input_name and isinstance(arr, np.ndarray) and arr.ndim >= 2 and arr.shape[1] > 0:
-            input_dims_map[input_name] = int(arr.shape[1])
+        arr_np = arr if isinstance(arr, np.ndarray) else None
+        if input_name and arr_np is not None and arr_np.ndim >= 2 and arr_np.shape[1] > 0:
+            input_dims_map[input_name] = int(arr_np.shape[1])
 
     for head in output_heads:
-        if not isinstance(head, dict):
-            continue
         maps_to = str(head.get("maps_to_target_config_name", "")).strip()
         out_name = str(head.get("output_layer_name", "")).strip()
         if out_name == "":
@@ -217,8 +302,9 @@ def run_smoke_fit_real_data(
         if units is None:
             target_name = maps_to or out_name
             arr = all_data.get(target_name)
-            if isinstance(arr, np.ndarray) and arr.ndim >= 2 and arr.shape[1] > 0:
-                units = int(arr.shape[1])
+            arr_np = arr if isinstance(arr, np.ndarray) else None
+            if arr_np is not None and arr_np.ndim >= 2 and arr_np.shape[1] > 0:
+                units = int(arr_np.shape[1])
         output_units_map[out_name] = max(1, int(units or 1))
 
     model, input_names, _ = build_keras_model(
@@ -229,20 +315,19 @@ def run_smoke_fit_real_data(
     )
 
     x_data: dict[str, np.ndarray] = {}
-    y_list: list[np.ndarray] = []
+    y_map: dict[str, np.ndarray] = {}
 
     for idx, input_name in enumerate(input_names):
         source_feature_name = input_name
-        if idx < len(used_inputs) and isinstance(used_inputs[idx], dict):
+        if idx < len(used_inputs):
             source_feature_name = str(used_inputs[idx].get("source_feature_name", input_name))
         arr = all_data.get(source_feature_name)
-        if not isinstance(arr, np.ndarray) or arr.size == 0:
+        arr_np = arr if isinstance(arr, np.ndarray) else None
+        if arr_np is None or arr_np.size == 0:
             raise RuntimeError(f"missing real input data for feature: {source_feature_name}")
-        x_data[input_name] = _sanitize_real_array(arr, f"input:{source_feature_name}")
+        x_data[input_name] = _sanitize_real_array(arr_np, f"input:{source_feature_name}")
 
     for head in output_heads:
-        if not isinstance(head, dict):
-            continue
         maps_to = str(head.get("maps_to_target_config_name", "")).strip()
         out_name = str(head.get("output_layer_name", "")).strip()
         target_name = maps_to or out_name
@@ -255,21 +340,30 @@ def run_smoke_fit_real_data(
             arr = all_data.get(source_key)
         if not isinstance(arr, np.ndarray) or arr.size == 0:
             raise RuntimeError(f"missing real target data for target: {target_name}")
-        y_list.append(_sanitize_real_array(arr, f"target:{target_name}"))
+        if out_name == "":
+            out_name = target_name
+        y_map[out_name] = _sanitize_real_array(arr, f"target:{target_name}")
 
-    if not y_list:
+    if not y_map:
         raise RuntimeError("no real targets found for output_heads")
 
-    lengths = [arr.shape[0] for arr in list(x_data.values()) + y_list if isinstance(arr, np.ndarray) and arr.ndim >= 2]
+    lengths = [arr.shape[0] for arr in list(x_data.values()) + list(y_map.values()) if isinstance(arr, np.ndarray) and arr.ndim >= 2]
     if not lengths:
         raise RuntimeError("real data arrays are empty")
     n = min(min(lengths), max(8, int(max_rows)))
 
     x_fit = {k: v[:n] for k, v in x_data.items()}
-    if len(y_list) == 1 and len(model.outputs) == 1:
-        y_fit: Any = y_list[0][:n]
+    if len(model.outputs) == 1:
+        only_output = model.output_names[0]
+        if only_output in y_map:
+            y_fit: Any = y_map[only_output][:n]
+        else:
+            y_fit = list(y_map.values())[0][:n]
     else:
-        y_fit = [arr[:n] for arr in y_list]
+        y_fit = {name: y_map[name][:n] for name in model.output_names if name in y_map}
+        if len(y_fit) != len(model.output_names):
+            missing = [name for name in model.output_names if name not in y_fit]
+            raise RuntimeError(f"missing real target data for output heads: {', '.join(missing)}")
 
     history = model.fit(x_fit, y_fit, epochs=1, batch_size=batch_size, verbose=0)
     tf.keras.backend.clear_session()
@@ -277,5 +371,12 @@ def run_smoke_fit_real_data(
     del all_data
     gc.collect()
     loss = float(history.history.get("loss", [0.0])[-1]) if history.history else 0.0
-    mae = float(history.history.get("mae", [0.0])[-1]) if history.history else 0.0
+    mae = 0.0
+    if history.history:
+        if "mae" in history.history:
+            mae = float(history.history.get("mae", [0.0])[-1])
+        else:
+            mae_keys = sorted([key for key in history.history.keys() if key.endswith("_mae")])
+            if mae_keys:
+                mae = float(np.mean([float(history.history[key][-1]) for key in mae_keys]))
     return {"loss": loss, "mae": mae, "samples": n}

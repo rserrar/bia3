@@ -84,6 +84,7 @@ def _candidate_from_llm(candidate_id: str, payload_context: dict[str, Any]) -> t
         print(f"[WARN] LLM generation failed, fallback to baseline: {error}")
         return None
     normalized = normalize_llm_candidate_payload(payload)
+    payload_meta = payload if isinstance(payload, dict) else {}
     full = normalized.get("model_definition_full") if isinstance(normalized.get("model_definition_full"), dict) else None
     summary = normalized.get("model_definition_summary") if isinstance(normalized.get("model_definition_summary"), dict) else None
     if not full or not summary:
@@ -91,11 +92,11 @@ def _candidate_from_llm(candidate_id: str, payload_context: dict[str, Any]) -> t
     full["model_id"] = candidate_id
     llm_metadata = {
         "provider": "openai_chat",
-        "model": payload.get("_llm_model", ""),
-        "endpoint": payload.get("_llm_endpoint", ""),
-        "prompt_text": payload.get("_llm_prompt_text", ""),
-        "response_text": payload.get("_llm_response_text", ""),
-        "raw_response": payload.get("_llm_raw_response", {}),
+        "model": payload_meta.get("_llm_model", ""),
+        "endpoint": payload_meta.get("_llm_endpoint", ""),
+        "prompt_text": payload_meta.get("_llm_prompt_text", ""),
+        "response_text": payload_meta.get("_llm_response_text", ""),
+        "raw_response": payload_meta.get("_llm_raw_response", {}),
     }
     return full, summary, llm_metadata
 
