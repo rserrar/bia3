@@ -279,6 +279,24 @@ def _extract_available_targets(payload_context: dict[str, Any]) -> list[dict[str
             }
         )
 
+    # Fallback to experiment config targets when server payload does not include explicit target configs.
+    if not candidates:
+        settings = load_settings()
+        experiment = _read_json_if_exists(settings.experiment_config_file)
+        for item in _as_list_of_dicts(experiment.get("output_targets_config")):
+            target_name = str(item.get("target_name", "")).strip()
+            output_name = str(item.get("default_output_layer_name", target_name or "output_main")).strip()
+            if output_name == "":
+                continue
+            candidates.append(
+                {
+                    "output_layer_name": output_name,
+                    "maps_to_target_config_name": target_name or output_name,
+                    "units": max(1, _as_int(item.get("total_columns"), 1)),
+                    "activation": str(item.get("activation_output_layer", "linear") or "linear"),
+                }
+            )
+
     for ref in _as_list_of_dicts(payload_context.get("reference_models")):
         model_full = _as_dict(ref.get("model_definition_full"))
         arch = _as_dict(model_full.get("architecture_definition"))
