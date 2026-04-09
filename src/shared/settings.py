@@ -37,7 +37,7 @@ def load_settings() -> Settings:
         llm_api_key=os.getenv("V3_OPENAI_API_KEY", ""),
         llm_model=os.getenv("V3_OPENAI_MODEL", "gpt-4o-mini"),
         llm_endpoint=os.getenv("V3_OPENAI_ENDPOINT", "https://api.openai.com/v1/chat/completions"),
-        prompt_template_file=os.getenv("V3_LLM_PROMPT_TEMPLATE_FILE", "prompts/generate_new_models.txt"),
+        prompt_template_file=os.getenv("V3_LLM_PROMPT_TEMPLATE_FILE", "prompts/generate_exploration_models.txt"),
         architecture_guide_file=os.getenv("V3_LLM_ARCHITECTURE_GUIDE_FILE", "prompts/instruccions.md"),
         experiment_config_file=os.getenv("V3_LLM_EXPERIMENT_CONFIG_FILE", "config/experiment_config.json"),
         llm_num_new_models=int(os.getenv("V3_LLM_NUM_NEW_MODELS", "1")),
