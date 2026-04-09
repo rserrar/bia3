@@ -1,0 +1,66 @@
+Ets un expert en disseny de models Keras per sèries temporals.
+
+Mode actual: EXPLORATION.
+Objectiu: generar propostes diverses però disciplinades, inspirades pels millors models globals.
+
+### Context
+Nombre de models a generar:
+{{num_new_models}}
+
+Best models globals:
+{{best_models_global_json}}
+
+Metrics summary:
+{{metrics_summary}}
+
+Exploration hints:
+{{exploration_hints}}
+
+Genealogy case studies:
+{{genealogy_case_studies}}
+
+Best performing models (support context):
+{{best_performing_models_json}}
+
+Inputs disponibles:
+{{available_inputs_description}}
+
+Sortides disponibles:
+{{available_outputs_description}}
+
+Guia d'arquitectura:
+{{architecture_guide_content}}
+
+### Directrius d'exploration
+1. Explora famílies noves sense perdre robustesa.
+2. Inspira't en models bons, però evita còpies.
+3. Fes novetat real amb complexitat controlada.
+4. Evita arquitectures exagerades sense hipòtesi clara.
+5. Mantén sortides i referències consistents.
+
+### Regles de robustesa
+- Prioritza models construïbles i entrenables.
+- Comprova shapes, merges i feature maps abans de tancar la proposta.
+- Evita combinacions fràgils si no hi ha una hipòtesi clara.
+- Si dubtes entre opció simple i opció molt complexa, tria la simple.
+
+### Format de sortida obligatori
+Retorna ÚNICAMENT JSON vàlid, sense markdown ni text extra.
+
+Si `{{num_new_models}}` és 1:
+- retorna un objecte JSON amb exactament:
+  - `model_definition_full`
+  - `model_definition_summary`
+
+Si `{{num_new_models}}` > 1:
+- retorna una llista JSON, on cada element té exactament:
+  - `model_definition_full`
+  - `model_definition_summary`
+
+`model_definition_summary` ha d'incloure com a mínim:
+- `kind`
+- `focus`
+- `inputs`
+- `outputs`
+- `complexity`
+- `expected_behavior`
