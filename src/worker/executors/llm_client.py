@@ -1,8 +1,12 @@
 import json
+import glob
+import re
 from pathlib import Path
 from typing import Any
 from urllib import request as urlrequest
 from urllib.error import HTTPError
+
+from src.shared.settings import load_settings
 
 
 def _extract_balanced_payload(text: str, start: int, opening: str, closing: str) -> str:
@@ -95,6 +99,117 @@ def normalize_llm_candidate_payload(payload: dict | list) -> dict:
     return {}
 
 
+def _resolve_repo_path(file_path: str) -> Path:
+    raw = Path(file_path)
+    if raw.is_absolute():
+        return raw
+    return (Path(__file__).resolve().parents[3] / raw).resolve()
+
+
+def _read_text_if_exists(file_path: str) -> str:
+    try:
+        path = _resolve_repo_path(file_path)
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+    except Exception:
+        pass
+    return ""
+
+
+def _read_json_if_exists(file_path: str) -> dict[str, Any]:
+    raw = _read_text_if_exists(file_path)
+    if raw.strip() == "":
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _inputs_description(experiment: dict[str, Any]) -> str:
+    rows: list[str] = []
+    for item in experiment.get("input_features_config", []) if isinstance(experiment.get("input_features_config"), list) else []:
+        if not isinstance(item, dict):
+            continue
+        feature = str(item.get("feature_name", "")).strip() or "unknown"
+        cols = int(item.get("total_columns", 0) or 0)
+        default_layer = str(item.get("default_input_layer_name", "")).strip()
+        source_csv = str(item.get("source_csv_key", "")).strip()
+        desc = str(item.get("description", "")).strip()
+        extras: list[str] = []
+        if default_layer:
+            extras.append(f"default_input_layer_name={default_layer}")
+        if source_csv:
+            extras.append(f"csv={source_csv}")
+        rows.append(f"- feature_name={feature} · cols={cols} · {' · '.join(extras)} · {desc}")
+    if rows:
+        return "\n".join(rows)
+    return "No input features config available in experiment_config.json"
+
+
+def _outputs_description(experiment: dict[str, Any]) -> str:
+    rows: list[str] = []
+    for item in experiment.get("output_targets_config", []) if isinstance(experiment.get("output_targets_config"), list) else []:
+        if not isinstance(item, dict):
+            continue
+        target = str(item.get("target_name", "")).strip() or "unknown"
+        cols = int(item.get("total_columns", 0) or 0)
+        layer = str(item.get("default_output_layer_name", "")).strip()
+        source_csv = str(item.get("source_csv_key", "")).strip()
+        rows.append(
+            f"- target_name={target} · cols={cols} · default_output_layer_name={layer} · csv={source_csv}"
+        )
+    if rows:
+        return "\n".join(rows)
+    return "No output targets config available in experiment_config.json"
+
+
+def _pick_working_model_example_json() -> str:
+    repo_root = Path(__file__).resolve().parents[3]
+    patterns = [
+        repo_root / "models" / "test" / "*.json",
+        repo_root / "models" / "base" / "*.json",
+    ]
+    for pattern in patterns:
+        for file_path in sorted(glob.glob(str(pattern))):
+            try:
+                text = Path(file_path).read_text(encoding="utf-8").strip()
+            except Exception:
+                continue
+            if text.startswith("{"):
+                return text
+    return "{}"
+
+
+def _split_validation_error(validation_error: str) -> tuple[str, str]:
+    text = str(validation_error or "").strip()
+    marker = "Traceback:"
+    idx = text.find(marker)
+    if idx < 0:
+        return text if text else "No validation_error provided", "No traceback provided"
+    summary = text[:idx].strip()
+    traceback_text = text[idx + len(marker) :].strip()
+    if summary == "":
+        summary = "No validation_error summary provided"
+    if traceback_text == "":
+        traceback_text = "No traceback provided"
+    return summary, traceback_text
+
+
+def _replace_prompt_placeholders(prompt_template: str, replacements: dict[str, str]) -> str:
+    prompt = prompt_template
+    for key, value in replacements.items():
+        prompt = prompt.replace("{{" + key + "}}", value)
+
+    unresolved = sorted(set(re.findall(r"\{\{\s*([^}]+?)\s*\}\}", prompt)))
+    for name in unresolved:
+        cleaned = str(name).strip()
+        prompt = prompt.replace("{{" + cleaned + "}}", f"[UNAVAILABLE:{cleaned}]")
+        prompt = prompt.replace("{{ " + cleaned + " }}", f"[UNAVAILABLE:{cleaned}]")
+    return prompt
+
+
 def generate_candidate_via_openai(api_key: str, model: str, prompt: str, endpoint: str) -> dict[str, Any]:
     print(f"[INFO] LLM request -> endpoint={endpoint} model={model}", flush=True)
     body = {
@@ -160,9 +275,7 @@ def repair_model_definition_via_openai(
 ) -> dict:
     prompt_template = ""
     try:
-        path = Path(fix_prompt_file)
-        if not path.is_absolute():
-            path = (Path(__file__).resolve().parents[3] / path).resolve()
+        path = _resolve_repo_path(fix_prompt_file)
         if path.exists():
             prompt_template = path.read_text(encoding="utf-8")
     except Exception:
@@ -173,9 +286,21 @@ def repair_model_definition_via_openai(
             "Repair this model definition JSON so it compiles in Keras and can run one smoke-fit batch. "
             "Return only JSON with key model_definition_full."
         )
-    prompt = (
-        prompt_template
-        .replace("{{validation_error}}", validation_error)
-        .replace("{{buggy_model_json}}", json.dumps(model_definition_full, ensure_ascii=False, indent=2))
-    )
+
+    settings = load_settings()
+    experiment = _read_json_if_exists(settings.experiment_config_file)
+    architecture_guide = _read_text_if_exists(settings.architecture_guide_file)
+    summary_error, traceback_error = _split_validation_error(validation_error)
+
+    replacements = {
+        "validation_error": summary_error,
+        "error_traceback": traceback_error,
+        "buggy_model_json": json.dumps(model_definition_full, ensure_ascii=False, indent=2),
+        "working_model_example_json": _pick_working_model_example_json(),
+        "available_inputs_description": _inputs_description(experiment),
+        "available_outputs_description": _outputs_description(experiment),
+        "architecture_guide_content": architecture_guide if architecture_guide.strip() else "No architecture guide content available",
+    }
+    prompt = _replace_prompt_placeholders(prompt_template, replacements)
+
     return generate_candidate_via_openai(api_key=api_key, model=model, prompt=prompt, endpoint=endpoint)
