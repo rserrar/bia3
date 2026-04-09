@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from src.shared.settings import load_settings
-from .llm_client import generate_candidate_via_openai, normalize_llm_candidate_payload
+from .llm_client import LlmRequestError, generate_candidate_via_openai, normalize_llm_candidate_payload
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -489,16 +489,32 @@ def _fallback_definition(candidate_id: str, payload_context: dict[str, Any]) -> 
     return _build_structured_fallback_model(candidate_id, payload_context)
 
 
+def _default_llm_trace(*, generation_mode: str, template_file: str, error_type: str, error_message: str) -> dict[str, Any]:
+    return {
+        "provider": "openai_chat",
+        "generation_mode": generation_mode,
+        "template_file": template_file,
+        "model": "",
+        "endpoint": "",
+        "prompt": None,
+        "response_raw": None,
+        "response_parsed": None,
+        "parse_ok": False,
+        "error_type": error_type,
+        "error_message": error_message,
+    }
+
+
 def _candidate_from_llm(
     candidate_id: str,
     payload_context: dict[str, Any],
     prompt_text: str,
     generation_mode: str,
     template_file: str,
-) -> tuple[dict, dict, dict[str, Any]] | None:
+) -> tuple[tuple[dict, dict, dict[str, Any]] | None, dict[str, Any] | None, str | None]:
     settings = load_settings()
     if settings.llm_mode != "openai_chat" or settings.llm_api_key.strip() == "":
-        return None
+        return None, None, "llm_disabled_or_unconfigured"
     try:
         payload = generate_candidate_via_openai(
             api_key=settings.llm_api_key,
@@ -506,11 +522,24 @@ def _candidate_from_llm(
             prompt=prompt_text,
             endpoint=settings.llm_endpoint,
         )
+    except LlmRequestError as error:
+        llm_trace = error.llm_trace if isinstance(error.llm_trace, dict) else None
+        reason = str((llm_trace or {}).get("error_type") or "llm_request_error")
+        print(f"[LLM] fallback reason={reason}", flush=True)
+        return None, llm_trace, reason
     except Exception as error:
         print(f"[WARN] LLM generation failed, fallback to baseline: {error}")
-        return None
+        llm_trace = _default_llm_trace(
+            generation_mode=generation_mode,
+            template_file=template_file,
+            error_type="llm_unhandled_error",
+            error_message=str(error),
+        )
+        print("[LLM] fallback reason=llm_unhandled_error", flush=True)
+        return None, llm_trace, "llm_unhandled_error"
 
     payload_meta = payload if isinstance(payload, dict) else {}
+    llm_trace = payload_meta.get("_llm_trace") if isinstance(payload_meta.get("_llm_trace"), dict) else None
     normalized = normalize_llm_candidate_payload(payload)
     full = normalized.get("model_definition_full") if isinstance(normalized.get("model_definition_full"), dict) else None
     summary = normalized.get("model_definition_summary") if isinstance(normalized.get("model_definition_summary"), dict) else None
@@ -533,15 +562,51 @@ def _candidate_from_llm(
             full = maybe_full
 
     if full is None:
-        return None
+        reason = str(payload_meta.get("_llm_error_type", "llm_invalid_payload"))
+        if llm_trace is None:
+            llm_trace = _default_llm_trace(
+                generation_mode=generation_mode,
+                template_file=template_file,
+                error_type=reason,
+                error_message="model_definition_full missing after normalization",
+            )
+        print(f"[LLM] fallback reason={reason}", flush=True)
+        return None, llm_trace, reason
 
     arch = _as_dict(full.get("architecture_definition"))
     if not arch:
-        return None
+        reason = "llm_invalid_architecture_definition"
+        if llm_trace is None:
+            llm_trace = _default_llm_trace(
+                generation_mode=generation_mode,
+                template_file=template_file,
+                error_type=reason,
+                error_message="architecture_definition missing or invalid",
+            )
+        print(f"[LLM] fallback reason={reason}", flush=True)
+        return None, llm_trace, reason
     if not _as_list_of_dicts(arch.get("used_inputs")):
-        return None
+        reason = "llm_invalid_used_inputs"
+        if llm_trace is None:
+            llm_trace = _default_llm_trace(
+                generation_mode=generation_mode,
+                template_file=template_file,
+                error_type=reason,
+                error_message="used_inputs missing or invalid",
+            )
+        print(f"[LLM] fallback reason={reason}", flush=True)
+        return None, llm_trace, reason
     if not _as_list_of_dicts(arch.get("output_heads")):
-        return None
+        reason = "llm_invalid_output_heads"
+        if llm_trace is None:
+            llm_trace = _default_llm_trace(
+                generation_mode=generation_mode,
+                template_file=template_file,
+                error_type=reason,
+                error_message="output_heads missing or invalid",
+            )
+        print(f"[LLM] fallback reason={reason}", flush=True)
+        return None, llm_trace, reason
 
     if not isinstance(summary, dict) or len(summary) == 0:
         summary = _summarize_model_definition(full)
@@ -557,8 +622,9 @@ def _candidate_from_llm(
         "response_text": payload_meta.get("_llm_response_text", ""),
         "raw_response": payload_meta.get("_llm_raw_response", {}),
         "parsed_model_definition": full,
+        "llm_trace": llm_trace,
     }
-    return full, summary, llm_metadata
+    return (full, summary, llm_metadata), llm_trace, None
 
 
 def execute_generate_candidate(payload: dict) -> dict:
@@ -589,7 +655,7 @@ def execute_generate_candidate(payload: dict) -> dict:
     candidates = []
     for _ in range(max(1, target)):
         candidate_id = f"cand_{uuid4().hex[:12]}"
-        llm_out = _candidate_from_llm(
+        llm_out, llm_trace, fallback_reason = _candidate_from_llm(
             candidate_id,
             effective_context,
             prompt_text,
@@ -598,14 +664,28 @@ def execute_generate_candidate(payload: dict) -> dict:
         )
         if llm_out is None:
             model_full, model_summary = _fallback_definition(candidate_id, effective_context)
+            trace_prompt = llm_trace.get("prompt") if isinstance(llm_trace, dict) else None
+            trace_response = llm_trace.get("response_raw") if isinstance(llm_trace, dict) else None
+            trace_model = llm_trace.get("model") if isinstance(llm_trace, dict) else ""
+            trace_endpoint = llm_trace.get("endpoint") if isinstance(llm_trace, dict) else ""
             llm_metadata = {
                 "provider": "fallback",
                 "generation_mode": mode,
                 "template_file": template_file,
-                "reason": "llm_unavailable_or_invalid",
+                "fallback_reason": fallback_reason or "llm_unavailable_or_invalid",
+                "reason": fallback_reason or "llm_unavailable_or_invalid",
+                "model": trace_model,
+                "endpoint": trace_endpoint,
+                "prompt_text": trace_prompt or "",
+                "response_text": trace_response or "",
+                "raw_response": {},
+                "llm_trace": llm_trace,
             }
+            print(f"[LLM] fallback reason={llm_metadata['fallback_reason']}", flush=True)
         else:
             model_full, model_summary, llm_metadata = llm_out
+            if "llm_trace" not in llm_metadata:
+                llm_metadata["llm_trace"] = llm_trace
 
         if not isinstance(model_summary, dict) or len(model_summary) == 0:
             model_summary = _summarize_model_definition(model_full if isinstance(model_full, dict) else {})

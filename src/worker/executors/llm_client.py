@@ -9,6 +9,35 @@ from urllib.error import HTTPError
 from src.shared.settings import load_settings
 
 
+class LlmRequestError(RuntimeError):
+    def __init__(self, message: str, llm_trace: dict[str, Any]):
+        super().__init__(message)
+        self.llm_trace = llm_trace
+
+
+def _truncate(text: Any, max_len: int = 20000) -> str | None:
+    if text is None:
+        return None
+    value = str(text)
+    if len(value) <= max_len:
+        return value
+    return value[:max_len]
+
+
+def _base_llm_trace(*, model: str, endpoint: str, prompt: str) -> dict[str, Any]:
+    return {
+        "provider": "openai_chat",
+        "model": model,
+        "endpoint": endpoint,
+        "prompt": _truncate(prompt),
+        "response_raw": None,
+        "response_parsed": None,
+        "parse_ok": False,
+        "error_type": None,
+        "error_message": None,
+    }
+
+
 def _extract_balanced_payload(text: str, start: int, opening: str, closing: str) -> str:
     depth = 0
     in_string = False
@@ -211,7 +240,9 @@ def _replace_prompt_placeholders(prompt_template: str, replacements: dict[str, s
 
 
 def generate_candidate_via_openai(api_key: str, model: str, prompt: str, endpoint: str) -> dict[str, Any]:
+    llm_trace = _base_llm_trace(model=model, endpoint=endpoint, prompt=prompt)
     print(f"[INFO] LLM request -> endpoint={endpoint} model={model}", flush=True)
+    print(f"[LLM] prompt size={len(str(prompt))}", flush=True)
     body = {
         "model": model,
         "messages": [
@@ -237,30 +268,62 @@ def generate_candidate_via_openai(api_key: str, model: str, prompt: str, endpoin
         with urlrequest.urlopen(req, timeout=60) as resp:
             content = resp.read().decode("utf-8")
             print("[INFO] LLM response received", flush=True)
+            llm_trace["response_raw"] = _truncate(content)
+            print(f"[LLM] response size={len(content)}", flush=True)
     except HTTPError as error:
         body = error.read().decode("utf-8", errors="ignore")
-        raise RuntimeError(f"OpenAI HTTP {error.code}: {body}") from error
-    api_payload = json.loads(content)
+        llm_trace["response_raw"] = _truncate(body)
+        llm_trace["error_type"] = "llm_api_error"
+        llm_trace["error_message"] = f"OpenAI HTTP {error.code}: {body}"
+        print("[LLM] parse_ok=False", flush=True)
+        raise LlmRequestError(str(llm_trace["error_message"]), llm_trace) from error
+
+    try:
+        api_payload = json.loads(content)
+    except Exception as error:
+        llm_trace["error_type"] = "llm_api_error"
+        llm_trace["error_message"] = f"Invalid API JSON response: {error}"
+        print("[LLM] parse_ok=False", flush=True)
+        raise LlmRequestError(str(llm_trace["error_message"]), llm_trace) from error
+
     message = (
         api_payload.get("choices", [{}])[0]
         .get("message", {})
         .get("content", "")
     )
-    parsed = _extract_json(str(message))
+
+    llm_trace["response_raw"] = _truncate(message)
+    print(f"[LLM] response size={len(str(message))}", flush=True)
+
+    try:
+        parsed = _extract_json(str(message))
+    except Exception as error:
+        llm_trace["parse_ok"] = False
+        llm_trace["error_type"] = "llm_parse_error"
+        llm_trace["error_message"] = str(error)
+        print("[LLM] parse_ok=False", flush=True)
+        raise LlmRequestError(f"LLM parse error: {error}", llm_trace) from error
+
+    llm_trace["parse_ok"] = True
+    llm_trace["response_parsed"] = parsed if isinstance(parsed, (dict, list)) else None
+    print("[LLM] parse_ok=True", flush=True)
+
     if isinstance(parsed, dict):
         parsed["_llm_raw_response"] = api_payload
-        parsed["_llm_response_text"] = str(message)
-        parsed["_llm_prompt_text"] = prompt
+        parsed["_llm_response_text"] = _truncate(message)
+        parsed["_llm_prompt_text"] = _truncate(prompt)
         parsed["_llm_model"] = model
         parsed["_llm_endpoint"] = endpoint
+        parsed["_llm_trace"] = llm_trace
         return parsed
     return {
         "_llm_parsed_payload": parsed,
         "_llm_raw_response": api_payload,
-        "_llm_response_text": str(message),
-        "_llm_prompt_text": prompt,
+        "_llm_response_text": _truncate(message),
+        "_llm_prompt_text": _truncate(prompt),
         "_llm_model": model,
         "_llm_endpoint": endpoint,
+        "_llm_trace": llm_trace,
     }
 
 
