@@ -163,6 +163,140 @@ def _resolve_optimizer(tf: Any, optimizer_value: Any) -> Any:
     return tf.keras.optimizers.Adam()
 
 
+def _require_positive_int(value: Any, param_name: str, layer_name: str | None, default: int | None = None) -> int:
+    if value is None:
+        if default is not None:
+            return default
+        raise ValueError(f"Layer '{layer_name or 'unnamed'}' requires integer '{param_name}'")
+    try:
+        parsed = int(value)
+    except Exception as error:
+        raise ValueError(f"Layer '{layer_name or 'unnamed'}' has invalid '{param_name}': {value}") from error
+    if parsed <= 0:
+        raise ValueError(f"Layer '{layer_name or 'unnamed'}' requires '{param_name}' > 0")
+    return parsed
+
+
+def _resolve_required_multi_tensors(
+    multi_tensors: list[Any],
+    layer_name: str | None,
+    layer_type: str,
+    min_count: int = 2,
+) -> list[Any]:
+    if len(multi_tensors) < min_count:
+        raise ValueError(
+            f"Layer '{layer_name or 'unnamed'}' ({layer_type}) requires "
+            f"input_source_feature_maps with at least {min_count} tensors"
+        )
+    return multi_tensors
+
+
+def _assert_tensor_min_rank(tensor: Any, min_rank: int, layer_name: str | None, layer_type: str) -> None:
+    rank = len(getattr(tensor, "shape", []))
+    if rank < min_rank:
+        raise ValueError(
+            f"Layer '{layer_name or 'unnamed'}' ({layer_type}) requires tensor rank >= {min_rank}, got rank={rank}"
+        )
+
+
+def _common_layer_kwargs(
+    p: dict[str, Any],
+    extra_excluded: set[str] | None = None,
+) -> dict[str, Any]:
+    excluded = {
+        "type",
+        "layer_type",
+        "name",
+        "params",
+        "explicit_input_source_feature_map",
+        "input_source_feature_maps",
+    }
+    if extra_excluded:
+        excluded |= extra_excluded
+    return {k: v for k, v in p.items() if k not in excluded}
+
+
+def _build_recurrent_layer(tf: Any, p: dict[str, Any], layer_name: str | None, layer_type: str) -> Any:
+    if layer_type not in {"LSTM", "GRU"}:
+        raise ValueError(f"Unsupported recurrent layer type for wrapper: {layer_type}")
+
+    units_default = 32 if layer_type == "LSTM" else None
+    units = _require_positive_int(p.get("units"), "units", layer_name, default=units_default)
+    kwargs = {
+        "units": units,
+        "activation": str(p.get("activation", "tanh")),
+        "recurrent_activation": str(p.get("recurrent_activation", "sigmoid")),
+        "return_sequences": bool(p.get("return_sequences", False)),
+        "return_state": bool(p.get("return_state", False)),
+        "go_backwards": bool(p.get("go_backwards", False)),
+        "stateful": bool(p.get("stateful", False)),
+        "unroll": bool(p.get("unroll", False)),
+        "use_bias": bool(p.get("use_bias", True)),
+        "kernel_initializer": _resolve_initializer(tf, p.get("kernel_initializer")),
+        "recurrent_initializer": _resolve_initializer(tf, p.get("recurrent_initializer")),
+        "bias_initializer": _resolve_initializer(tf, p.get("bias_initializer")),
+        "kernel_regularizer": _resolve_regularizer(tf, p.get("kernel_regularizer")),
+        "recurrent_regularizer": _resolve_regularizer(tf, p.get("recurrent_regularizer")),
+        "bias_regularizer": _resolve_regularizer(tf, p.get("bias_regularizer")),
+        "activity_regularizer": _resolve_regularizer(tf, p.get("activity_regularizer")),
+    }
+    if p.get("dropout") is not None:
+        kwargs["dropout"] = float(p.get("dropout") or 0.0)
+    if p.get("recurrent_dropout") is not None:
+        kwargs["recurrent_dropout"] = float(p.get("recurrent_dropout") or 0.0)
+
+    filtered_kwargs: dict[str, Any] = {}
+    for key, value in kwargs.items():
+        if key.endswith("_initializer") and value is None:
+            continue
+        filtered_kwargs[key] = value
+
+    if layer_type == "GRU":
+        filtered_kwargs["reset_after"] = bool(p.get("reset_after", True))
+        return tf.keras.layers.GRU(name=layer_name, **filtered_kwargs)
+    return tf.keras.layers.LSTM(name=layer_name, **filtered_kwargs)
+
+
+def _build_time_distributed_inner_layer(tf: Any, wrapped_cfg: dict[str, Any], parent_name: str | None) -> Any:
+    wrapped = _layer_params(wrapped_cfg)
+    wrapped_type = _layer_kind(wrapped, "")
+    wrapped_name = str(wrapped.get("name", "")).strip() or None
+
+    if wrapped_type == "Dense":
+        units = _require_positive_int(wrapped.get("units"), "units", wrapped_name or parent_name, default=32)
+        return tf.keras.layers.Dense(
+            units,
+            activation=str(wrapped.get("activation", "linear")),
+            use_bias=bool(wrapped.get("use_bias", True)),
+            name=wrapped_name,
+            kernel_initializer=_resolve_initializer(tf, wrapped.get("kernel_initializer")),
+            bias_initializer=_resolve_initializer(tf, wrapped.get("bias_initializer")),
+            kernel_regularizer=_resolve_regularizer(tf, wrapped.get("kernel_regularizer")),
+            bias_regularizer=_resolve_regularizer(tf, wrapped.get("bias_regularizer")),
+            activity_regularizer=_resolve_regularizer(tf, wrapped.get("activity_regularizer")),
+        )
+
+    if wrapped_type == "Activation":
+        activation = str(wrapped.get("activation_function", wrapped.get("activation", "linear")))
+        return tf.keras.layers.Activation(activation=activation, name=wrapped_name)
+
+    if wrapped_type == "Dropout":
+        rate = float(wrapped.get("rate", 0.2) or 0.2)
+        return tf.keras.layers.Dropout(rate=rate, name=wrapped_name)
+
+    if wrapped_type == "LayerNormalization":
+        kwargs = _common_layer_kwargs(wrapped)
+        return tf.keras.layers.LayerNormalization(name=wrapped_name, **kwargs)
+
+    if wrapped_type == "BatchNormalization":
+        kwargs = _common_layer_kwargs(wrapped)
+        return tf.keras.layers.BatchNormalization(name=wrapped_name, **kwargs)
+
+    raise ValueError(
+        f"Layer '{parent_name or 'unnamed'}' (TimeDistributed) has unsupported wrapped layer type: {wrapped_type}"
+    )
+
+
 def _apply_layer(
     tf: Any,
     x: Any,
@@ -191,8 +325,47 @@ def _apply_layer(
             "activity_regularizer": _resolve_regularizer(tf, p.get("activity_regularizer")),
         }
 
+    def _conv1d_kwargs(separable: bool = False) -> dict[str, Any]:
+        kernel_size_default = None
+        kernel_size_value = p.get("kernel_size", kernel_size_default)
+        if isinstance(kernel_size_value, list) and len(kernel_size_value) == 1:
+            kernel_size_value = kernel_size_value[0]
+        strides_value = p.get("strides", 1)
+        if isinstance(strides_value, list) and len(strides_value) == 1:
+            strides_value = strides_value[0]
+        dilation_value = p.get("dilation_rate", 1)
+        if isinstance(dilation_value, list) and len(dilation_value) == 1:
+            dilation_value = dilation_value[0]
+
+        kwargs = {
+            "filters": _require_positive_int(p.get("filters"), "filters", layer_name, default=16),
+            "kernel_size": _require_positive_int(kernel_size_value, "kernel_size", layer_name, default=kernel_size_default),
+            "activation": p.get("activation", default_activation),
+            "padding": str(p.get("padding", "valid")),
+            "strides": _require_positive_int(strides_value, "strides", layer_name, default=1),
+            "dilation_rate": _require_positive_int(dilation_value, "dilation_rate", layer_name, default=1),
+            "use_bias": bool(p.get("use_bias", True)),
+            "name": layer_name,
+            "bias_regularizer": _resolve_regularizer(tf, p.get("bias_regularizer")),
+            "activity_regularizer": _resolve_regularizer(tf, p.get("activity_regularizer")),
+        }
+        if separable:
+            kwargs["depth_multiplier"] = _require_positive_int(
+                p.get("depth_multiplier"), "depth_multiplier", layer_name, default=1
+            )
+            kwargs["depthwise_initializer"] = _resolve_initializer(tf, p.get("depthwise_initializer"))
+            kwargs["pointwise_initializer"] = _resolve_initializer(tf, p.get("pointwise_initializer"))
+            kwargs["bias_initializer"] = _resolve_initializer(tf, p.get("bias_initializer"))
+            kwargs["depthwise_regularizer"] = _resolve_regularizer(tf, p.get("kernel_regularizer"))
+            kwargs["pointwise_regularizer"] = _resolve_regularizer(tf, p.get("kernel_regularizer"))
+        else:
+            kwargs["kernel_regularizer"] = _resolve_regularizer(tf, p.get("kernel_regularizer"))
+            kwargs["kernel_initializer"] = _resolve_initializer(tf, p.get("kernel_initializer"))
+            kwargs["bias_initializer"] = _resolve_initializer(tf, p.get("bias_initializer"))
+        return kwargs
+
     if layer_type == "Dense":
-        units = int(p.get("units", 32) or 32)
+        units = _require_positive_int(p.get("units"), "units", layer_name, default=32)
         activation = str(p.get("activation", default_activation))
         kwargs = _dense_kwargs()
         return tf.keras.layers.Dense(units, activation=activation, **kwargs)(x)
@@ -206,13 +379,13 @@ def _apply_layer(
         return tf.keras.layers.SpatialDropout1D(rate=rate, name=layer_name)(x)
 
     if layer_type == "BatchNormalization":
-        kwargs = {k: v for k, v in p.items() if k not in {"type", "layer_type", "name", "params", "explicit_input_source_feature_map", "input_source_feature_maps"}}
+        kwargs = _common_layer_kwargs(p)
         if layer_name is not None:
             kwargs["name"] = layer_name
         return tf.keras.layers.BatchNormalization(**kwargs)(x)
 
     if layer_type == "LayerNormalization":
-        kwargs = {k: v for k, v in p.items() if k not in {"type", "layer_type", "name", "params", "explicit_input_source_feature_map", "input_source_feature_maps"}}
+        kwargs = _common_layer_kwargs(p)
         if layer_name is not None:
             kwargs["name"] = layer_name
         return tf.keras.layers.LayerNormalization(**kwargs)(x)
@@ -220,73 +393,88 @@ def _apply_layer(
     if layer_type == "Reshape":
         target_shape = _as_shape_tuple(p.get("target_shape"))
         if target_shape is None:
-            target_shape = (int(p.get("units", 1) or 1),)
+            target_shape = (_require_positive_int(p.get("units"), "units", layer_name, default=1),)
         return tf.keras.layers.Reshape(target_shape=target_shape, name=layer_name)(x)
 
     if layer_type == "Conv1D":
-        kwargs = {
-            "filters": int(p.get("filters", 16) or 16),
-            "kernel_size": int(p.get("kernel_size", 3) or 3),
-            "activation": p.get("activation", default_activation),
-            "padding": str(p.get("padding", "valid")),
-            "strides": int(p.get("strides", 1) or 1),
-            "dilation_rate": int(p.get("dilation_rate", 1) or 1),
-            "use_bias": bool(p.get("use_bias", True)),
-            "name": layer_name,
-            "kernel_initializer": _resolve_initializer(tf, p.get("kernel_initializer")),
-            "bias_initializer": _resolve_initializer(tf, p.get("bias_initializer")),
-            "kernel_regularizer": _resolve_regularizer(tf, p.get("kernel_regularizer")),
-            "bias_regularizer": _resolve_regularizer(tf, p.get("bias_regularizer")),
-            "activity_regularizer": _resolve_regularizer(tf, p.get("activity_regularizer")),
-        }
+        kwargs = _conv1d_kwargs(separable=False)
         return tf.keras.layers.Conv1D(**kwargs)(x)
 
     if layer_type == "SeparableConv1D":
-        kwargs = {
-            "filters": int(p.get("filters", 16) or 16),
-            "kernel_size": int(p.get("kernel_size", 3) or 3),
-            "activation": p.get("activation", default_activation),
-            "padding": str(p.get("padding", "valid")),
-            "strides": int(p.get("strides", 1) or 1),
-            "dilation_rate": int(p.get("dilation_rate", 1) or 1),
-            "depth_multiplier": int(p.get("depth_multiplier", 1) or 1),
-            "use_bias": bool(p.get("use_bias", True)),
-            "name": layer_name,
-            "depthwise_initializer": _resolve_initializer(tf, p.get("depthwise_initializer")),
-            "pointwise_initializer": _resolve_initializer(tf, p.get("pointwise_initializer")),
-            "bias_initializer": _resolve_initializer(tf, p.get("bias_initializer")),
-            "depthwise_regularizer": _resolve_regularizer(tf, p.get("kernel_regularizer")),
-            "pointwise_regularizer": _resolve_regularizer(tf, p.get("kernel_regularizer")),
-            "bias_regularizer": _resolve_regularizer(tf, p.get("bias_regularizer")),
-            "activity_regularizer": _resolve_regularizer(tf, p.get("activity_regularizer")),
-        }
+        kwargs = _conv1d_kwargs(separable=True)
         return tf.keras.layers.SeparableConv1D(**kwargs)(x)
 
     if layer_type == "LSTM":
+        return _build_recurrent_layer(tf, p, layer_name, layer_type="LSTM")(x)
+
+    if layer_type == "GRU":
+        return _build_recurrent_layer(tf, p, layer_name, layer_type="GRU")(x)
+
+    if layer_type == "Bidirectional":
+        wrapped_cfg = p.get("wrapped_layer") or p.get("inner_layer") or p.get("layer")
+        if not isinstance(wrapped_cfg, dict):
+            raise ValueError(
+                f"Layer '{layer_name or 'unnamed'}' (Bidirectional) requires dict 'wrapped_layer' or 'inner_layer'"
+            )
+        wrapped = _layer_params(wrapped_cfg)
+        wrapped_type = _layer_kind(wrapped, "")
+        if wrapped_type not in {"LSTM", "GRU"}:
+            raise ValueError(
+                f"Layer '{layer_name or 'unnamed'}' (Bidirectional) supports only wrapped LSTM or GRU, got: {wrapped_type}"
+            )
+        inner_name = str(wrapped.get("name", "")).strip() or None
+        inner_layer = _build_recurrent_layer(tf, wrapped, inner_name, layer_type=wrapped_type)
         kwargs = {
-            "units": int(p.get("units", 32) or 32),
-            "activation": str(p.get("activation", "tanh")),
-            "recurrent_activation": str(p.get("recurrent_activation", "sigmoid")),
-            "return_sequences": bool(p.get("return_sequences", False)),
-            "use_bias": bool(p.get("use_bias", True)),
+            "merge_mode": str(p.get("merge_mode", "concat")),
             "name": layer_name,
-            "kernel_initializer": _resolve_initializer(tf, p.get("kernel_initializer")),
-            "recurrent_initializer": _resolve_initializer(tf, p.get("recurrent_initializer")),
-            "bias_initializer": _resolve_initializer(tf, p.get("bias_initializer")),
-            "kernel_regularizer": _resolve_regularizer(tf, p.get("kernel_regularizer")),
-            "bias_regularizer": _resolve_regularizer(tf, p.get("bias_regularizer")),
-            "activity_regularizer": _resolve_regularizer(tf, p.get("activity_regularizer")),
         }
-        return tf.keras.layers.LSTM(**kwargs)(x)
+        if p.get("backward_layer") and isinstance(p.get("backward_layer"), dict):
+            bw_wrapped = _layer_params(_as_dict(p.get("backward_layer")))
+            bw_type = _layer_kind(bw_wrapped, "")
+            if bw_type not in {"LSTM", "GRU"}:
+                raise ValueError(
+                    f"Layer '{layer_name or 'unnamed'}' backward_layer supports only LSTM or GRU, got: {bw_type}"
+                )
+            kwargs["backward_layer"] = _build_recurrent_layer(
+                tf,
+                bw_wrapped,
+                str(bw_wrapped.get("name", "")).strip() or None,
+                layer_type=bw_type,
+            )
+        return tf.keras.layers.Bidirectional(inner_layer, **kwargs)(x)
+
+    if layer_type == "TimeDistributed":
+        wrapped_cfg = p.get("wrapped_layer") or p.get("inner_layer") or p.get("layer")
+        if not isinstance(wrapped_cfg, dict):
+            raise ValueError(
+                f"Layer '{layer_name or 'unnamed'}' (TimeDistributed) requires dict 'wrapped_layer' or 'inner_layer'"
+            )
+        inner_layer = _build_time_distributed_inner_layer(tf, wrapped_cfg, layer_name)
+        return tf.keras.layers.TimeDistributed(inner_layer, name=layer_name)(x)
 
     if layer_type == "MaxPooling1D":
+        pool_size_value = p.get("pool_size", 2)
+        if isinstance(pool_size_value, list) and len(pool_size_value) == 1:
+            pool_size_value = pool_size_value[0]
         kwargs = {
-            "pool_size": int(p.get("pool_size", 2) or 2),
-            "strides": int(p.get("strides", 2) or 2),
+            "pool_size": _require_positive_int(pool_size_value, "pool_size", layer_name, default=2),
+            "strides": _require_positive_int(p.get("strides"), "strides", layer_name, default=2),
             "padding": str(p.get("padding", "valid")),
             "name": layer_name,
         }
         return tf.keras.layers.MaxPooling1D(**kwargs)(x)
+
+    if layer_type == "AveragePooling1D":
+        pool_size_value = p.get("pool_size", 2)
+        if isinstance(pool_size_value, list) and len(pool_size_value) == 1:
+            pool_size_value = pool_size_value[0]
+        kwargs = {
+            "pool_size": _require_positive_int(pool_size_value, "pool_size", layer_name, default=2),
+            "strides": _require_positive_int(p.get("strides"), "strides", layer_name, default=2),
+            "padding": str(p.get("padding", "valid")),
+            "name": layer_name,
+        }
+        return tf.keras.layers.AveragePooling1D(**kwargs)(x)
 
     if layer_type == "GlobalMaxPooling1D":
         keepdims = bool(p.get("keepdims", False))
@@ -299,9 +487,59 @@ def _apply_layer(
     if layer_type == "Flatten":
         return tf.keras.layers.Flatten(name=layer_name)(x)
 
+    if layer_type == "RepeatVector":
+        n = _require_positive_int(p.get("n") or p.get("repeat_count"), "n", layer_name)
+        return tf.keras.layers.RepeatVector(n=n, name=layer_name)(x)
+
+    if layer_type == "GaussianNoise":
+        stddev = p.get("stddev", p.get("rate", 0.1))
+        try:
+            stddev_f = float(stddev)
+        except Exception as error:
+            raise ValueError(f"Layer '{layer_name or 'unnamed'}' (GaussianNoise) has invalid stddev: {stddev}") from error
+        if stddev_f <= 0:
+            raise ValueError(f"Layer '{layer_name or 'unnamed'}' (GaussianNoise) requires stddev > 0")
+        return tf.keras.layers.GaussianNoise(stddev=stddev_f, name=layer_name)(x)
+
+    if layer_type == "Masking":
+        mask_value = float(p.get("mask_value", 0.0) or 0.0)
+        return tf.keras.layers.Masking(mask_value=mask_value, name=layer_name)(x)
+
     if layer_type == "Activation":
         activation = str(p.get("activation_function", p.get("activation", default_activation)))
         return tf.keras.layers.Activation(activation, name=layer_name)(x)
+
+    if layer_type == "Softmax":
+        axis = int(p.get("axis", -1) or -1)
+        return tf.keras.layers.Softmax(axis=axis, name=layer_name)(x)
+
+    if layer_type == "ReLU":
+        kwargs = {
+            "max_value": p.get("max_value"),
+            "negative_slope": float(p.get("negative_slope", 0.0) or 0.0),
+            "threshold": float(p.get("threshold", 0.0) or 0.0),
+            "name": layer_name,
+        }
+        return tf.keras.layers.ReLU(**kwargs)(x)
+
+    if layer_type == "LeakyReLU":
+        alpha = float(p.get("alpha", p.get("negative_slope", 0.3)) or 0.3)
+        return tf.keras.layers.LeakyReLU(alpha=alpha, name=layer_name)(x)
+
+    if layer_type == "PReLU":
+        kwargs = {
+            "alpha_initializer": _resolve_initializer(tf, p.get("alpha_initializer")),
+            "alpha_regularizer": _resolve_regularizer(tf, p.get("alpha_regularizer")),
+            "name": layer_name,
+        }
+        shared_axes = p.get("shared_axes")
+        if isinstance(shared_axes, list) and shared_axes:
+            kwargs["shared_axes"] = [int(axis) for axis in shared_axes]
+        return tf.keras.layers.PReLU(**kwargs)(x)
+
+    if layer_type == "ELU":
+        alpha = float(p.get("alpha", 1.0) or 1.0)
+        return tf.keras.layers.ELU(alpha=alpha, name=layer_name)(x)
 
     if layer_type == "LambdaSlice":
         slice_params = _as_dict(p.get("slice_params"))
@@ -315,23 +553,22 @@ def _apply_layer(
         return layer_obj(x)
 
     if layer_type == "Add":
-        if len(multi_tensors) < 2:
-            return x
-        return tf.keras.layers.Add(name=layer_name)(multi_tensors)
+        tensors = _resolve_required_multi_tensors(multi_tensors, layer_name, layer_type, min_count=2)
+        return tf.keras.layers.Add(name=layer_name)(tensors)
 
     if layer_type == "Multiply":
-        if len(multi_tensors) < 2:
-            return x
-        return tf.keras.layers.Multiply(name=layer_name)(multi_tensors)
+        tensors = _resolve_required_multi_tensors(multi_tensors, layer_name, layer_type, min_count=2)
+        return tf.keras.layers.Multiply(name=layer_name)(tensors)
 
     if layer_type == "Concatenate":
-        if len(multi_tensors) < 2:
-            return x
+        tensors = _resolve_required_multi_tensors(multi_tensors, layer_name, layer_type, min_count=2)
         axis = int(p.get("axis", -1) or -1)
-        return tf.keras.layers.Concatenate(axis=axis, name=layer_name)(multi_tensors)
+        return tf.keras.layers.Concatenate(axis=axis, name=layer_name)(tensors)
 
     if layer_type == "AttentionKeras":
-        tensors = multi_tensors if len(multi_tensors) >= 2 else [x, x]
+        tensors = _resolve_required_multi_tensors(multi_tensors, layer_name, layer_type, min_count=2)
+        _assert_tensor_min_rank(tensors[0], min_rank=3, layer_name=layer_name, layer_type=layer_type)
+        _assert_tensor_min_rank(tensors[1], min_rank=3, layer_name=layer_name, layer_type=layer_type)
         params = _as_dict(p.get("params"))
         kwargs = {}
         if "dropout" in params:
@@ -347,17 +584,36 @@ def _apply_layer(
         return att([tensors[0], tensors[1]], **call_kwargs)
 
     if layer_type == "MultiHeadAttentionKeras":
-        tensors = multi_tensors if len(multi_tensors) >= 1 else [x]
+        tensors = _resolve_required_multi_tensors(multi_tensors, layer_name, layer_type, min_count=1)
+        _assert_tensor_min_rank(tensors[0], min_rank=3, layer_name=layer_name, layer_type=layer_type)
+        if len(tensors) >= 2:
+            _assert_tensor_min_rank(tensors[1], min_rank=3, layer_name=layer_name, layer_type=layer_type)
+        if len(tensors) >= 3:
+            _assert_tensor_min_rank(tensors[2], min_rank=3, layer_name=layer_name, layer_type=layer_type)
         constructor_params = _as_dict(p.get("constructor_params"))
-        num_heads = int(constructor_params.get("num_heads", p.get("num_heads", 2)) or 2)
-        key_dim = int(constructor_params.get("key_dim", p.get("key_dim", 16)) or 16)
+        num_heads = _require_positive_int(
+            constructor_params.get("num_heads", p.get("num_heads")),
+            "num_heads",
+            layer_name,
+            default=2,
+        )
+        key_dim = _require_positive_int(
+            constructor_params.get("key_dim", p.get("key_dim")),
+            "key_dim",
+            layer_name,
+            default=16,
+        )
         kwargs = {
             "num_heads": num_heads,
             "key_dim": key_dim,
             "name": layer_name,
         }
         if "value_dim" in constructor_params:
-            kwargs["value_dim"] = int(constructor_params.get("value_dim") or 0)
+            kwargs["value_dim"] = _require_positive_int(
+                constructor_params.get("value_dim"),
+                "value_dim",
+                layer_name,
+            )
         if "dropout" in constructor_params:
             kwargs["dropout"] = float(constructor_params.get("dropout", 0.0) or 0.0)
         if "use_bias" in constructor_params:
@@ -402,7 +658,7 @@ def _apply_layer(
             return out[0]
         return out
 
-    return x
+    raise ValueError(f"Unsupported layer type: {layer_type}")
 
 
 def build_keras_model(
