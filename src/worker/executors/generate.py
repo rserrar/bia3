@@ -1,10 +1,11 @@
 from uuid import uuid4
+import json
+import re
 from pathlib import Path
 from typing import Any
 
 from src.shared.settings import load_settings
 from .llm_client import generate_candidate_via_openai, normalize_llm_candidate_payload
-from .v2_prompt_builder import V2PromptBuilder
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -22,6 +23,172 @@ def _as_int(value: Any, default: int) -> int:
         return int(value)
     except Exception:
         return default
+
+
+def _resolve_repo_path(file_path: str) -> Path:
+    raw = Path(file_path)
+    if raw.is_absolute():
+        return raw
+    return (Path(__file__).resolve().parents[3] / raw).resolve()
+
+
+def _read_text_if_exists(file_path: str) -> str:
+    try:
+        path = _resolve_repo_path(file_path)
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+    except Exception:
+        pass
+    return ""
+
+
+def _read_json_if_exists(file_path: str) -> dict[str, Any]:
+    raw = _read_text_if_exists(file_path)
+    if raw.strip() == "":
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _to_json_text(value: Any) -> str:
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, indent=2)
+    return "{}"
+
+
+def _inputs_description_from_config(config: dict[str, Any]) -> str:
+    rows: list[str] = []
+    for item in _as_list_of_dicts(config.get("input_features_config")):
+        feature = str(item.get("feature_name", "unknown"))
+        cols = _as_int(item.get("total_columns"), 0)
+        mandatory = bool(item.get("is_mandatory_input", False))
+        default_layer = str(item.get("default_input_layer_name", ""))
+        source_csv = str(item.get("source_csv_key", ""))
+        desc = str(item.get("description", ""))
+        rows.append(
+            f"- feature_name={feature} · cols={cols} · mandatory={mandatory} · "
+            f"default_input_layer_name={default_layer} · csv={source_csv} · {desc}"
+        )
+    return "\n".join(rows) if rows else "No input features config available"
+
+
+def _outputs_description_from_config(config: dict[str, Any]) -> str:
+    rows: list[str] = []
+    for item in _as_list_of_dicts(config.get("output_targets_config")):
+        target = str(item.get("target_name", "unknown"))
+        cols = _as_int(item.get("total_columns"), 0)
+        mandatory = bool(item.get("is_mandatory_output", False))
+        layer = str(item.get("default_output_layer_name", ""))
+        loss = str(item.get("loss_function", ""))
+        activation = str(item.get("activation_output_layer", ""))
+        rows.append(
+            f"- target_name={target} · cols={cols} · mandatory={mandatory} · "
+            f"default_output_layer_name={layer} · loss={loss} · activation={activation}"
+        )
+    return "\n".join(rows) if rows else "No output targets config available"
+
+
+def _render_prompt_template(template: str, context: dict[str, Any]) -> tuple[str, list[str]]:
+    out = template
+    for key, value in context.items():
+        out = out.replace("{{" + key + "}}", str(value))
+        out = out.replace("{{ " + key + " }}", str(value))
+
+    unresolved = sorted(set(re.findall(r"\{\{\s*([^}]+?)\s*\}\}", out)))
+    for key in unresolved:
+        cleaned = str(key).strip()
+        out = out.replace("{{" + cleaned + "}}", "")
+        out = out.replace("{{ " + cleaned + " }}", "")
+    return out, unresolved
+
+
+def _default_template_for_mode(mode: str) -> str:
+    if mode == "repair":
+        return (
+            "Repair this model definition JSON so it compiles in Keras and can run smoke fit.\n"
+            "Buggy model JSON:\n{{buggy_model_json}}\n"
+            "Validation error:\n{{validation_error}}\n"
+            "Traceback:\n{{error_traceback}}\n"
+            "Working example:\n{{working_model_example_json}}\n"
+            "Return ONLY JSON with key model_definition_full."
+        )
+    return (
+        "Generate {{num_new_models}} Keras model candidates as JSON.\n"
+        "Use architecture guide:\n{{architecture_guide_content}}\n"
+        "Available inputs:\n{{available_inputs_description}}\n"
+        "Available outputs:\n{{available_outputs_description}}\n"
+        "Best models context:\n{{best_performing_models_json}}\n"
+        "Genealogy:\n{{genealogy_case_studies}}\n"
+        "Return only JSON with model_definition_full and model_definition_summary."
+    )
+
+
+def _template_file_for_mode(mode: str) -> str:
+    if mode == "repair":
+        return "prompts/fix_model_error.txt"
+    if mode == "evolution":
+        return "prompts/generate_evolution_models.txt"
+    return "prompts/generate_exploration_models.txt"
+
+
+def _build_prompt_context_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    settings = load_settings()
+    mode = str(payload.get("generation_mode", "exploration")).strip().lower() or "exploration"
+    prompt_context = _as_dict(payload.get("prompt_context"))
+    experiment = _read_json_if_exists(settings.experiment_config_file)
+
+    available_inputs_description = str(prompt_context.get("available_inputs_description", "")).strip()
+    if available_inputs_description == "":
+        source_cfg = _as_dict(prompt_context.get("experiment_config")) or experiment
+        available_inputs_description = _inputs_description_from_config(source_cfg)
+
+    available_outputs_description = str(prompt_context.get("available_outputs_description", "")).strip()
+    if available_outputs_description == "":
+        source_cfg = _as_dict(prompt_context.get("experiment_config")) or experiment
+        available_outputs_description = _outputs_description_from_config(source_cfg)
+
+    architecture_guide_content = str(prompt_context.get("architecture_guide_content", "")).strip()
+    if architecture_guide_content == "":
+        architecture_guide_content = _read_text_if_exists(settings.architecture_guide_file)
+
+    target_candidates = max(1, _as_int(payload.get("target_candidates", 1), 1))
+
+    context: dict[str, Any] = {
+        "num_new_models": str(target_candidates),
+        "available_inputs_description": available_inputs_description,
+        "available_outputs_description": available_outputs_description,
+        "architecture_guide_content": architecture_guide_content,
+        "genealogy_case_studies": str(prompt_context.get("genealogy_case_studies", "")),
+        "best_performing_models_json": "[]",
+        "num_best_models_considered": "0",
+        "improvement_focus": str(prompt_context.get("improvement_focus", "")),
+        "exploration_hints": str(prompt_context.get("exploration_hints", "")),
+        "validation_error": str(prompt_context.get("validation_error", "")),
+        "error_traceback": str(prompt_context.get("error_traceback", "")),
+        "buggy_model_json": _to_json_text(prompt_context.get("buggy_model")),
+        "working_model_example_json": _to_json_text(prompt_context.get("working_model_example")),
+        "best_models_global_json": _to_json_text(prompt_context.get("best_models_global", [])),
+        "family_models_json": _to_json_text(prompt_context.get("family_models", [])),
+        "parent_model_json": _to_json_text(prompt_context.get("parent_model")),
+        "family_metrics_summary": _to_json_text(prompt_context.get("family_metrics_summary", {})),
+        "metrics_summary": _to_json_text(prompt_context.get("metrics_summary", {})),
+    }
+
+    if mode == "evolution":
+        parent_model = _as_dict(prompt_context.get("parent_model"))
+        family_models = _as_list_of_dicts(prompt_context.get("family_models"))
+        best = [item for item in ([parent_model] + family_models) if isinstance(item, dict) and item]
+        context["best_performing_models_json"] = _to_json_text(best[:10])
+        context["num_best_models_considered"] = str(len(best[:10]))
+    elif mode == "exploration":
+        best_global = _as_list_of_dicts(prompt_context.get("best_models_global"))
+        context["best_performing_models_json"] = _to_json_text(best_global[:10])
+        context["num_best_models_considered"] = str(len(best_global[:10]))
+
+    return context
 
 
 def _normalize_shape(total_columns: Any, default: int) -> list[int]:
@@ -304,40 +471,13 @@ def _fallback_definition(candidate_id: str, payload_context: dict[str, Any]) -> 
     return _build_structured_fallback_model(candidate_id, payload_context)
 
 
-def _llm_prompt() -> str:
-    return ""
-
-
-def _build_prompt_from_v2_builder(payload_context: dict[str, Any]) -> str:
-    settings = load_settings()
-    repo_root = Path(__file__).resolve().parents[3]
-    builder = V2PromptBuilder(
-        repo_root=repo_root,
-        prompt_template_file=settings.prompt_template_file,
-        architecture_guide_file=settings.architecture_guide_file,
-        experiment_config_file=settings.experiment_config_file,
-        num_new_models=settings.llm_num_new_models,
-        num_reference_models=settings.llm_num_reference_models,
-    )
-    context: dict[str, Any] = {
-        "run_id": payload_context.get("run_id", "v3_run"),
-        "generation": int(payload_context.get("generation", 0) or 0),
-        "code_version": payload_context.get("code_version", "v3-colab-worker"),
-        "latest_metrics": payload_context.get("latest_metrics", {}),
-        "reference_models": payload_context.get("reference_models", []),
-        "recent_generated_models": payload_context.get("recent_generated_models", []),
-    }
-    prompt = builder.build_prompt(context)
-    if prompt.strip() == "":
-        return (
-            "Generate one Keras model definition as JSON for tabular regression. "
-            "Return an object with keys model_definition_full and model_definition_summary. "
-            "model_definition_full must contain architecture_definition.used_inputs, branches[].layers[], output_heads[]."
-        )
-    return prompt
-
-
-def _candidate_from_llm(candidate_id: str, payload_context: dict[str, Any]) -> tuple[dict, dict, dict[str, Any]] | None:
+def _candidate_from_llm(
+    candidate_id: str,
+    payload_context: dict[str, Any],
+    prompt_text: str,
+    generation_mode: str,
+    template_file: str,
+) -> tuple[dict, dict, dict[str, Any]] | None:
     settings = load_settings()
     if settings.llm_mode != "openai_chat" or settings.llm_api_key.strip() == "":
         return None
@@ -345,7 +485,7 @@ def _candidate_from_llm(candidate_id: str, payload_context: dict[str, Any]) -> t
         payload = generate_candidate_via_openai(
             api_key=settings.llm_api_key,
             model=settings.llm_model,
-            prompt=_build_prompt_from_v2_builder(payload_context),
+            prompt=prompt_text,
             endpoint=settings.llm_endpoint,
         )
     except Exception as error:
@@ -368,6 +508,12 @@ def _candidate_from_llm(candidate_id: str, payload_context: dict[str, Any]) -> t
             if isinstance(first.get("model_definition_full"), dict):
                 full = first.get("model_definition_full")
 
+    if full is None and isinstance(payload_meta.get("proposal"), dict):
+        proposal = _as_dict(payload_meta.get("proposal"))
+        maybe_full = proposal.get("model_definition")
+        if isinstance(maybe_full, dict):
+            full = maybe_full
+
     if full is None:
         return None
 
@@ -385,25 +531,59 @@ def _candidate_from_llm(candidate_id: str, payload_context: dict[str, Any]) -> t
     full["model_id"] = candidate_id
     llm_metadata = {
         "provider": "openai_chat",
+        "generation_mode": generation_mode,
+        "template_file": template_file,
         "model": payload_meta.get("_llm_model", ""),
         "endpoint": payload_meta.get("_llm_endpoint", ""),
         "prompt_text": payload_meta.get("_llm_prompt_text", ""),
         "response_text": payload_meta.get("_llm_response_text", ""),
         "raw_response": payload_meta.get("_llm_raw_response", {}),
+        "parsed_model_definition": full,
     }
     return full, summary, llm_metadata
 
 
 def execute_generate_candidate(payload: dict) -> dict:
+    mode = str(payload.get("generation_mode", "exploration")).strip().lower() or "exploration"
+    if mode not in {"repair", "evolution", "exploration"}:
+        mode = "exploration"
+
+    template_file = _template_file_for_mode(mode)
+    template_text = _read_text_if_exists(template_file)
+    if template_text.strip() == "":
+        template_text = _default_template_for_mode(mode)
+
+    prompt_context = _build_prompt_context_from_payload(payload)
+    prompt_text, unresolved = _render_prompt_template(template_text, prompt_context)
+
+    print(f"[GEN] mode={mode}", flush=True)
+    print(f"[GEN] using template={template_file}", flush=True)
+    print(f"[GEN] context keys={','.join(sorted(prompt_context.keys()))}", flush=True)
+    print(f"[GEN] prompt size={len(prompt_text)}", flush=True)
+    if unresolved:
+        print(f"[GEN][WARN] unresolved placeholders={','.join(unresolved)}", flush=True)
+
+    effective_context = dict(payload)
+    nested_context = _as_dict(payload.get("prompt_context"))
+    effective_context.update(nested_context)
+
     target = int(payload.get("target_candidates", 1) or 1)
     candidates = []
     for _ in range(max(1, target)):
         candidate_id = f"cand_{uuid4().hex[:12]}"
-        llm_out = _candidate_from_llm(candidate_id, payload)
+        llm_out = _candidate_from_llm(
+            candidate_id,
+            effective_context,
+            prompt_text,
+            generation_mode=mode,
+            template_file=template_file,
+        )
         if llm_out is None:
-            model_full, model_summary = _fallback_definition(candidate_id, payload)
+            model_full, model_summary = _fallback_definition(candidate_id, effective_context)
             llm_metadata = {
                 "provider": "fallback",
+                "generation_mode": mode,
+                "template_file": template_file,
                 "reason": "llm_unavailable_or_invalid",
             }
         else:
