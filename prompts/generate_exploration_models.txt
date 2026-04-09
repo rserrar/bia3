@@ -1,66 +1,69 @@
-Ets un expert en disseny de models Keras per sèries temporals.
+Mode: EXPLORATION
 
-Mode actual: EXPLORATION.
-Objectiu: generar propostes diverses però disciplinades, inspirades pels millors models globals.
+Objectiu: proposar arquitectures diverses, però robustes i controlades.
 
 ### Context
-Nombre de models a generar:
-{{num_new_models}}
+num_new_models={{num_new_models}}
 
-Best models globals:
+best_models_global:
 {{best_models_global_json}}
 
-Metrics summary:
+metrics_summary:
 {{metrics_summary}}
 
-Exploration hints:
+exploration_hints:
 {{exploration_hints}}
 
-Genealogy case studies:
+genealogy_case_studies:
 {{genealogy_case_studies}}
 
-Best performing models (support context):
-{{best_performing_models_json}}
-
-Inputs disponibles:
+available_inputs_description:
 {{available_inputs_description}}
 
-Sortides disponibles:
+available_outputs_description:
 {{available_outputs_description}}
 
-Guia d'arquitectura:
-{{architecture_guide_content}}
+### Regles principals
+1. Inspira't en els models bons, però evita còpies trivials.
+2. Explora com a màxim 1-2 novetats per model.
+3. Prioritza arquitectures simples i entrenables.
+4. Evita nesting profund i wrappers innecessaris.
+5. Si dubtes, tria la versió més simple i robusta.
 
-### Directrius d'exploration
-1. Explora famílies noves sense perdre robustesa.
-2. Inspira't en models bons, però evita còpies.
-3. Fes novetat real amb complexitat controlada.
-4. Evita arquitectures exagerades sense hipòtesi clara.
-5. Mantén sortides i referències consistents.
+### Guardrails d'arquitectura
+- `architecture_definition` obligatori.
+- `used_inputs` obligatori i no buit.
+- `output_heads` obligatori i no buit.
+- No inventis noms d'inputs fora de `available_inputs_description`.
+- No inventis targets fora de `available_outputs_description`.
+- `Add`/`Multiply`/`Concatenate` requereixen `input_source_feature_maps` amb >=2 tensors.
+- `AttentionKeras`/`MultiHeadAttentionKeras` requereixen tensors de rank >=3.
+- `TimeDistributed` només amb inner layer suportada (ex. Dense).
+- `Bidirectional` requereix `wrapped_layer` o `inner_layer`.
+- `Dense` requereix `units`; `Conv1D` requereix `kernel_size`; `GRU/LSTM` requereixen `units`.
 
-### Regles de robustesa
-- Prioritza models construïbles i entrenables.
-- Comprova shapes, merges i feature maps abans de tancar la proposta.
-- Evita combinacions fràgils si no hi ha una hipòtesi clara.
-- Si dubtes entre opció simple i opció molt complexa, tria la simple.
+### Auto-check abans de retornar
+Verifica internament:
+- JSON vàlid
+- camps obligatoris presents
+- inputs/outputs consistents
+- capes suportades
 
-### Format de sortida obligatori
-Retorna ÚNICAMENT JSON vàlid, sense markdown ni text extra.
+### Sortida (OBLIGATÒRIA)
+Return ONLY valid JSON. Do not include any extra text.
 
-Si `{{num_new_models}}` és 1:
-- retorna un objecte JSON amb exactament:
-  - `model_definition_full`
-  - `model_definition_summary`
+Si `num_new_models` == 1:
+{
+  "model_definition_full": { ... },
+  "model_definition_summary": {
+    "kind": "...",
+    "focus": "...",
+    "inputs": 0,
+    "outputs": 0,
+    "complexity": "low|medium|high",
+    "expected_behavior": "..."
+  }
+}
 
-Si `{{num_new_models}}` > 1:
-- retorna una llista JSON, on cada element té exactament:
-  - `model_definition_full`
-  - `model_definition_summary`
-
-`model_definition_summary` ha d'incloure com a mínim:
-- `kind`
-- `focus`
-- `inputs`
-- `outputs`
-- `complexity`
-- `expected_behavior`
+Si `num_new_models` > 1:
+[ {"model_definition_full": {...}, "model_definition_summary": {...}}, ... ]
