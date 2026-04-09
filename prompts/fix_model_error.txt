@@ -30,13 +30,47 @@ available_outputs_description:
 5. No substitueixis tot el model per una variant genèrica Dense-only.
 6. Verifica que els shapes d'entrada siguin compatibles amb les dades reals.
 7. Si cal simplificar, fes-ho mínimament mantenint l'estructura global.
+8. No facis servir claus legacy (`inputs`, `input_layers`, `shared_backbone`) dins `architecture_definition`.
 
 ### Guardrails d'arquitectura
 - `architecture_definition` obligatori.
 - `used_inputs` obligatori i no buit.
+- `branches` obligatori i no buit.
 - `output_heads` obligatori i no buit.
 - `Dense` requereix `units`; `Conv1D` requereix `kernel_size`; `GRU/LSTM` requereixen `units`.
 - `Add`/`Multiply`/`Concatenate` requereixen `input_source_feature_maps` >=2.
+
+### Mini schema obligatori (V3)
+`model_definition_full.architecture_definition` ha de tenir com a mínim:
+```json
+{
+  "used_inputs": [
+    {
+      "input_layer_name": "...",
+      "source_feature_name": "...",
+      "shape": [800]
+    }
+  ],
+  "branches": [
+    {
+      "name": "...",
+      "input_source_layer": "...",
+      "layers": [
+        {"type": "Dense", "units": 64, "activation": "relu", "name": "..."}
+      ],
+      "output_feature_map_name": "..."
+    }
+  ],
+  "output_heads": [
+    {
+      "output_layer_name": "...",
+      "maps_to_target_config_name": "...",
+      "source_feature_map": "...",
+      "units": 1
+    }
+  ]
+}
+```
 
 ### Auto-check abans de retornar
 Verifica internament:
@@ -44,9 +78,12 @@ Verifica internament:
 - camps obligatoris presents
 - inputs/outputs consistents
 - capes suportades
+- que el JSON parseja correctament en un parser JSON estàndard
+- que no hi ha claus legacy prohibides
 
 ### Sortida (OBLIGATÒRIA)
 Return ONLY valid JSON. Do not include any extra text.
+Before returning, validate that the response is valid JSON and parseable.
 
 Resposta amb exactament aquestes claus de primer nivell:
 - `model_definition_full`

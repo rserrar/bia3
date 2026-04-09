@@ -33,7 +33,9 @@ available_outputs_description:
 ### Guardrails d'arquitectura
 - `architecture_definition` obligatori.
 - `used_inputs` obligatori i no buit.
+- `branches` obligatori i no buit.
 - `output_heads` obligatori i no buit.
+- `merges` opcional, però si existeix ha de ser llista.
 - No inventis noms d'inputs fora de `available_inputs_description`.
 - No inventis targets fora de `available_outputs_description`.
 - `Add`/`Multiply`/`Concatenate` requereixen `input_source_feature_maps` amb >=2 tensors.
@@ -42,15 +44,59 @@ available_outputs_description:
 - `Bidirectional` requereix `wrapped_layer` o `inner_layer`.
 - `Dense` requereix `units`; `Conv1D` requereix `kernel_size`; `GRU/LSTM` requereixen `units`.
 
+### Claus prohibides (dialecte legacy)
+No utilitzis aquestes claus dins `architecture_definition`:
+- `inputs`
+- `input_layers`
+- `shared_backbone`
+- `layers` a nivell arrel de `architecture_definition`
+
+### Mini schema obligatori (V3)
+`model_definition_full.architecture_definition` ha de tenir aquest patró:
+```json
+{
+  "used_inputs": [
+    {
+      "input_layer_name": "...",
+      "source_feature_name": "...",
+      "shape": [800]
+    }
+  ],
+  "branches": [
+    {
+      "name": "...",
+      "input_source_layer": "...",
+      "layers": [
+        {"type": "Dense", "units": 64, "activation": "relu", "name": "..."}
+      ],
+      "output_feature_map_name": "..."
+    }
+  ],
+  "merges": [],
+  "output_heads": [
+    {
+      "output_layer_name": "...",
+      "maps_to_target_config_name": "...",
+      "source_feature_map": "...",
+      "units": 1,
+      "activation": "linear"
+    }
+  ]
+}
+```
+
 ### Auto-check abans de retornar
 Verifica internament:
 - JSON vàlid
 - camps obligatoris presents
 - inputs/outputs consistents
 - capes suportades
+- que el JSON parseja correctament en un parser JSON estàndard
+- que no hi ha claus legacy prohibides
 
 ### Sortida (OBLIGATÒRIA)
 Return ONLY valid JSON. Do not include any extra text.
+Before returning, validate that the response is valid JSON and parseable.
 
 Si `num_new_models` == 1:
 {
