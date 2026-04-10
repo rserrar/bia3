@@ -39,6 +39,7 @@ available_outputs_description:
 - `branches` obligatori i no buit.
 - `output_heads` obligatori i no buit.
 - `merges` opcional, però si existeix ha de ser llista.
+- Cada item de `merges` ha de tenir `name`, `type`, `source_feature_maps` (llista no buida) i `output_feature_map_name`.
 - No inventis inputs/targets fora dels disponibles.
 - Mantén coherència de `maps_to_target_config_name`.
 - `Add`/`Multiply`/`Concatenate`: `input_source_feature_maps` >=2.
@@ -85,6 +86,19 @@ No utilitzis aquestes claus dins `architecture_definition`:
       "activation": "linear"
     }
   ]
+}
+```
+
+Si utilitzes `merges`, cada merge ha de seguir aquest format mínim:
+```json
+{
+  "name": "fusion_main_aux",
+  "type": "concatenate",
+  "source_feature_maps": ["main_features", "aux_features"],
+  "layers_after_merge": [
+    {"type": "Dense", "units": 64, "activation": "relu", "name": "fusion_dense"}
+  ],
+  "output_feature_map_name": "shared_features"
 }
 ```
 

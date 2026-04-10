@@ -18,6 +18,20 @@ def _as_list_of_dicts(value: Any) -> list[dict[str, Any]]:
     return [item for item in value if isinstance(item, dict)]
 
 
+def _as_non_empty_str_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        item = value.strip()
+        return [item] if item else []
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for item in value:
+        text = str(item).strip()
+        if text:
+            out.append(text)
+    return out
+
+
 def _as_int(value: Any, default: int) -> int:
     try:
         return int(value)
@@ -133,6 +147,35 @@ def _template_file_for_mode(mode: str) -> str:
     if mode == "evolution":
         return "prompts/generate_evolution_models.txt"
     return "prompts/generate_exploration_models.txt"
+
+
+def _normalize_architecture_aliases(model_full: dict[str, Any]) -> None:
+    arch = _as_dict(model_full.get("architecture_definition"))
+    if not arch:
+        return
+
+    for merge in _as_list_of_dicts(arch.get("merges")):
+        merge_type = str(merge.get("type", "")).strip()
+        if merge_type == "":
+            alias = str(merge.get("merge_type", "")).strip()
+            if alias:
+                merge["type"] = alias
+
+        sources = _as_non_empty_str_list(merge.get("source_feature_maps"))
+        if not sources:
+            sources = _as_non_empty_str_list(merge.get("input_source_feature_maps"))
+        if sources:
+            merge["source_feature_maps"] = sources
+
+        if not str(merge.get("output_feature_map_name", "")).strip():
+            for key in ("output_feature_map", "output_name", "output_layer_name"):
+                alias = str(merge.get(key, "")).strip()
+                if alias:
+                    merge["output_feature_map_name"] = alias
+                    break
+
+        if "layers_after_merge" not in merge and isinstance(merge.get("layers"), list):
+            merge["layers_after_merge"] = merge.get("layers")
 
 
 def _build_prompt_context_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -573,6 +616,8 @@ def _candidate_from_llm(
             )
         print(f"[LLM] fallback reason={reason}", flush=True)
         return None, llm_trace, reason
+
+    _normalize_architecture_aliases(full)
 
     arch = _as_dict(full.get("architecture_definition"))
     if not arch:

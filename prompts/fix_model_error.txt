@@ -39,6 +39,7 @@ available_outputs_description:
 - `output_heads` obligatori i no buit.
 - `Dense` requereix `units`; `Conv1D` requereix `kernel_size`; `GRU/LSTM` requereixen `units`.
 - `Add`/`Multiply`/`Concatenate` requereixen `input_source_feature_maps` >=2.
+- Si existeix `merges`, cada merge ha de tenir `source_feature_maps` (llista no buida).
 
 ### Mini schema obligatori (V3)
 `model_definition_full.architecture_definition` ha de tenir com a mínim:
