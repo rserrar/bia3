@@ -898,8 +898,11 @@ def build_keras_model(
     return model, list(input_layers.keys()), list(model.output_names)
 
 
-def _sanitize_real_array(arr: np.ndarray, label: str) -> np.ndarray:
-    out = arr.astype("float32", copy=False)
+def _sanitize_real_array(arr: np.ndarray, label: str, target_dtype: str | None = "float32") -> np.ndarray:
+    if target_dtype in {"float16", "float32"}:
+        out = arr.astype(target_dtype, copy=False)
+    else:
+        out = arr
     if not np.isfinite(out).all():
         print(f"[WARN] Non-finite values detected in {label}; sanitizing", flush=True)
         out = np.nan_to_num(out, nan=0.0, posinf=1e6, neginf=-1e6)
@@ -1083,7 +1086,7 @@ def run_smoke_fit_real_data(
         arr_np = arr if isinstance(arr, np.ndarray) else None
         if arr_np is None or arr_np.size == 0:
             raise RuntimeError(f"missing real input data for feature: {source_feature_name}")
-        x_data[input_name] = _sanitize_real_array(arr_np, f"input:{source_feature_name}")
+        x_data[input_name] = arr_np
 
     for head in output_heads:
         maps_to = str(head.get("maps_to_target_config_name", "")).strip()
@@ -1100,7 +1103,7 @@ def run_smoke_fit_real_data(
             raise RuntimeError(f"missing real target data for target: {target_name}")
         if out_name == "":
             out_name = target_name
-        y_map[out_name] = _sanitize_real_array(arr, f"target:{target_name}")
+        y_map[out_name] = arr
 
     if not y_map:
         raise RuntimeError("no real targets found for output_heads")
@@ -1110,31 +1113,58 @@ def run_smoke_fit_real_data(
         raise RuntimeError("real data arrays are empty")
     n = min(min(lengths), max(8, int(max_rows)))
 
-    x_fit = {k: v[:n] for k, v in x_data.items()}
-    if len(model.outputs) == 1:
-        only_output = model.output_names[0]
-        if only_output in y_map:
-            y_fit: Any = y_map[only_output][:n]
-        else:
-            y_fit = list(y_map.values())[0][:n]
+    batch = max(1, int(batch_size))
+    if cache_dtype == "float16":
+        fit_dtype = "float16"
     else:
-        y_fit = {name: y_map[name][:n] for name in model.output_names if name in y_map}
-        if len(y_fit) != len(model.output_names):
-            missing = [name for name in model.output_names if name not in y_fit]
-            raise RuntimeError(f"missing real target data for output heads: {', '.join(missing)}")
+        fit_dtype = "float32"
 
-    history = model.fit(x_fit, y_fit, epochs=1, batch_size=batch_size, verbose=0)
+    loss_values: list[float] = []
+    mae_values: list[float] = []
+
+    for start in range(0, n, batch):
+        end = min(n, start + batch)
+        x_batch = {
+            name: _sanitize_real_array(arr[start:end], f"input:{name}", target_dtype=fit_dtype)
+            for name, arr in x_data.items()
+        }
+
+        if len(model.outputs) == 1:
+            only_output = model.output_names[0]
+            if only_output in y_map:
+                y_batch: Any = _sanitize_real_array(y_map[only_output][start:end], f"target:{only_output}", target_dtype=fit_dtype)
+            else:
+                first_name, first_arr = next(iter(y_map.items()))
+                y_batch = _sanitize_real_array(first_arr[start:end], f"target:{first_name}", target_dtype=fit_dtype)
+        else:
+            y_batch = {
+                name: _sanitize_real_array(y_map[name][start:end], f"target:{name}", target_dtype=fit_dtype)
+                for name in model.output_names
+                if name in y_map
+            }
+            if len(y_batch) != len(model.output_names):
+                missing = [name for name in model.output_names if name not in y_batch]
+                raise RuntimeError(f"missing real target data for output heads: {', '.join(missing)}")
+
+        metrics_batch = model.train_on_batch(x_batch, y_batch, return_dict=True)
+        if isinstance(metrics_batch, dict):
+            if "loss" in metrics_batch:
+                loss_values.append(float(metrics_batch.get("loss", 0.0) or 0.0))
+            if "mae" in metrics_batch:
+                mae_values.append(float(metrics_batch.get("mae", 0.0) or 0.0))
+            else:
+                batch_maes = [
+                    float(value)
+                    for key, value in metrics_batch.items()
+                    if isinstance(value, (float, int)) and str(key).endswith("_mae")
+                ]
+                if batch_maes:
+                    mae_values.append(float(np.mean(batch_maes)))
+
     tf.keras.backend.clear_session()
     del raw
     del all_data
     gc.collect()
-    loss = float(history.history.get("loss", [0.0])[-1]) if history.history else 0.0
-    mae = 0.0
-    if history.history:
-        if "mae" in history.history:
-            mae = float(history.history.get("mae", [0.0])[-1])
-        else:
-            mae_keys = sorted([key for key in history.history.keys() if key.endswith("_mae")])
-            if mae_keys:
-                mae = float(np.mean([float(history.history[key][-1]) for key in mae_keys]))
+    loss = float(np.mean(loss_values)) if loss_values else 0.0
+    mae = float(np.mean(mae_values)) if mae_values else 0.0
     return {"loss": loss, "mae": mae, "samples": n}
