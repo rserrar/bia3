@@ -91,6 +91,9 @@ def main() -> None:
             "V3_LLM_EXPERIMENT_CONFIG_FILE": "config/experiment_config.drive_runtime.json",
             "V3_DATA_DIR": cfg["data_dir"],
             "V3_REAL_DATA_MODE": "true",
+            "V3_TRAIN_INCLUDE_INLINE_ARTIFACTS": "true",
+            "V3_TRAIN_INCLUDE_FULL_MODEL_ARTIFACT": "true",
+            "V3_TRAIN_MAX_INLINE_ARTIFACT_MB": "256",
         },
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))
