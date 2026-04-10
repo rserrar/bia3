@@ -54,6 +54,8 @@ def execute_train_continue(payload: dict) -> dict:
     model_id = f"mdl_{uuid4().hex[:12]}"
     kpis = {"val_loss": 0.095, "val_mae": 0.028, "epochs": 1}
     training_stats_extra: dict[str, Any] = {}
+    training_history: dict[str, Any] = {}
+    inline_artifacts: list[dict[str, Any]] = []
     model_definition_full = payload.get("model_definition_full") if isinstance(payload.get("model_definition_full"), dict) else {}
     if model_definition_full:
         try:
@@ -84,6 +86,9 @@ def execute_train_continue(payload: dict) -> dict:
                 verbose=resolved["verbose"],
                 cache_dtype=settings.data_cache_dtype,
                 use_memmap_cache=settings.use_memmap_cache,
+                include_inline_artifacts=settings.train_include_inline_artifacts,
+                include_full_model_artifact=settings.train_include_full_model_artifact,
+                max_inline_artifact_mb=settings.train_max_inline_artifact_mb,
             )
             kpis["val_loss"] = float(full_fit.get("val_loss", kpis["val_loss"]))
             kpis["val_mae"] = float(full_fit.get("mae", kpis["val_mae"]))
@@ -104,7 +109,17 @@ def execute_train_continue(payload: dict) -> dict:
                 "min_lr": float(resolved["min_lr"]),
                 "restore_best_weights": bool(resolved["restore_best_weights"]),
                 "cache_dtype": settings.data_cache_dtype,
+                "inline_artifacts_count": len(full_fit.get("inline_artifacts", [])) if isinstance(full_fit.get("inline_artifacts"), list) else 0,
+                "inline_artifacts_skipped": full_fit.get("inline_artifacts_skipped", []),
             }
+            history_raw = full_fit.get("history")
+            training_history = {}
+            if isinstance(history_raw, dict):
+                training_history = {str(k): v for k, v in history_raw.items()}
+            artifacts_raw = full_fit.get("inline_artifacts")
+            inline_artifacts = []
+            if isinstance(artifacts_raw, list):
+                inline_artifacts = [item for item in artifacts_raw if isinstance(item, dict)]
         except Exception as error:
             return {
                 "status": "failed",
@@ -135,4 +150,8 @@ def execute_train_continue(payload: dict) -> dict:
     }
     if plot_png_base64:
         result["plot_model_png_base64"] = plot_png_base64
+    if training_history:
+        result["training_history"] = training_history
+    if inline_artifacts:
+        result["inline_artifacts"] = inline_artifacts
     return result

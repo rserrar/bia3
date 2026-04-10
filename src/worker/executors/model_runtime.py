@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import base64
 import gc
+import os
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
@@ -1126,6 +1127,11 @@ def _extract_mae_from_history(history_data: dict[str, list[Any]]) -> float:
     return 0.0
 
 
+def _encode_file_base64(path: str) -> str:
+    with open(path, "rb") as handle:
+        return base64.b64encode(handle.read()).decode("ascii")
+
+
 def run_smoke_fit_real_data(
     model_definition_full: dict[str, Any],
     *,
@@ -1218,6 +1224,9 @@ def run_full_fit_real_data(
     verbose: int = 1,
     cache_dtype: str = "float32",
     use_memmap_cache: bool = True,
+    include_inline_artifacts: bool = True,
+    include_full_model_artifact: bool = False,
+    max_inline_artifact_mb: int = 32,
 ) -> dict[str, Any]:
     tf = _tf()
     model, x_data, y_map, n = _prepare_real_fit_context(
@@ -1255,19 +1264,20 @@ def run_full_fit_real_data(
         resolved_validation_split = 0.49
 
     monitor_metric = "val_loss" if resolved_validation_split > 0.0 else "loss"
+    callback_verbose: Literal[0, 1] = 1 if max(0, int(verbose)) > 0 else 0
     callbacks = [
         tf.keras.callbacks.EarlyStopping(
             monitor=monitor_metric,
             patience=max(1, int(early_stopping_patience)),
             restore_best_weights=bool(restore_best_weights),
-            verbose=max(0, int(verbose)),
+            verbose=callback_verbose,
         ),
         tf.keras.callbacks.ReduceLROnPlateau(
             monitor=monitor_metric,
             factor=float(reduce_lr_factor),
             patience=max(1, int(reduce_lr_patience)),
             min_lr=max(0.0, float(min_lr)),
-            verbose=max(0, int(verbose)),
+            verbose=callback_verbose,
         ),
     ]
 
@@ -1300,6 +1310,91 @@ def run_full_fit_real_data(
     final_val_loss = float(val_loss_curve[-1]) if val_loss_curve else final_loss
     final_mae = _extract_mae_from_history(history_data)
 
+    inline_artifacts: list[dict[str, Any]] = []
+    inline_artifacts_skipped: list[dict[str, Any]] = []
+    max_inline_bytes = max(1, int(max_inline_artifact_mb)) * 1024 * 1024
+
+    if include_inline_artifacts:
+        weights_path: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".weights.h5", delete=False) as tmp_weights:
+                weights_path = tmp_weights.name
+            model.save_weights(weights_path)
+            if os.path.exists(weights_path) and os.path.getsize(weights_path) <= max_inline_bytes:
+                inline_artifacts.append(
+                    {
+                        "artifact_type": "trained_weights_h5",
+                        "file_name": "model.weights.h5",
+                        "content_base64": _encode_file_base64(weights_path),
+                        "metadata": {"size_bytes": os.path.getsize(weights_path)},
+                    }
+                )
+                inline_artifacts.append(
+                    {
+                        "artifact_type": "checkpoint_weights_h5",
+                        "file_name": "last.weights.h5",
+                        "content_base64": _encode_file_base64(weights_path),
+                        "metadata": {"size_bytes": os.path.getsize(weights_path)},
+                    }
+                )
+            elif weights_path is not None and os.path.exists(weights_path):
+                inline_artifacts_skipped.append(
+                    {
+                        "artifact_type": "trained_weights_h5",
+                        "reason": "exceeds_max_inline_size",
+                        "size_bytes": os.path.getsize(weights_path),
+                        "max_bytes": max_inline_bytes,
+                    }
+                )
+        except Exception as error:
+            print(f"[WARN] Could not export inline weights artifact: {error}", flush=True)
+        finally:
+            try:
+                if weights_path is not None and os.path.exists(weights_path):
+                    os.unlink(weights_path)
+            except Exception:
+                pass
+
+        if include_full_model_artifact:
+            model_path: str | None = None
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".keras", delete=False) as tmp_model:
+                    model_path = tmp_model.name
+                model.save(model_path)
+                if os.path.exists(model_path) and os.path.getsize(model_path) <= max_inline_bytes:
+                    inline_artifacts.append(
+                        {
+                            "artifact_type": "trained_model_keras",
+                            "file_name": "model.keras",
+                            "content_base64": _encode_file_base64(model_path),
+                            "metadata": {"size_bytes": os.path.getsize(model_path)},
+                        }
+                    )
+                elif model_path is not None and os.path.exists(model_path):
+                    inline_artifacts_skipped.append(
+                        {
+                            "artifact_type": "trained_model_keras",
+                            "reason": "exceeds_max_inline_size",
+                            "size_bytes": os.path.getsize(model_path),
+                            "max_bytes": max_inline_bytes,
+                        }
+                    )
+            except Exception as error:
+                print(f"[WARN] Could not export inline full model artifact: {error}", flush=True)
+                inline_artifacts_skipped.append(
+                    {
+                        "artifact_type": "trained_model_keras",
+                        "reason": "export_failed",
+                        "error": str(error),
+                    }
+                )
+            finally:
+                try:
+                    if model_path is not None and os.path.exists(model_path):
+                        os.unlink(model_path)
+                except Exception:
+                    pass
+
     tf.keras.backend.clear_session()
     gc.collect()
     return {
@@ -1311,4 +1406,7 @@ def run_full_fit_real_data(
         "best_epoch": best_epoch,
         "best_val_loss": best_val_loss,
         "samples": n,
+        "history": history_data,
+        "inline_artifacts": inline_artifacts,
+        "inline_artifacts_skipped": inline_artifacts_skipped,
     }

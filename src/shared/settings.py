@@ -33,6 +33,9 @@ class Settings:
     train_reduce_lr_factor: float
     train_min_lr: float
     train_restore_best_weights: bool
+    train_include_inline_artifacts: bool
+    train_include_full_model_artifact: bool
+    train_max_inline_artifact_mb: int
 
 
 def load_settings() -> Settings:
@@ -66,4 +69,7 @@ def load_settings() -> Settings:
         train_reduce_lr_factor=float(os.getenv("V3_TRAIN_REDUCE_LR_FACTOR", "0.5") or 0.5),
         train_min_lr=float(os.getenv("V3_TRAIN_MIN_LR", "0.000001") or 0.000001),
         train_restore_best_weights=os.getenv("V3_TRAIN_RESTORE_BEST_WEIGHTS", "true").lower() in {"1", "true", "yes"},
+        train_include_inline_artifacts=os.getenv("V3_TRAIN_INCLUDE_INLINE_ARTIFACTS", "true").lower() in {"1", "true", "yes"},
+        train_include_full_model_artifact=os.getenv("V3_TRAIN_INCLUDE_FULL_MODEL_ARTIFACT", "true").lower() in {"1", "true", "yes"},
+        train_max_inline_artifact_mb=max(16, int(os.getenv("V3_TRAIN_MAX_INLINE_ARTIFACT_MB", "256") or 256)),
     )
