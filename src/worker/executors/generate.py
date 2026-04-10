@@ -100,8 +100,9 @@ def _render_prompt_template(template: str, context: dict[str, Any]) -> tuple[str
     unresolved = sorted(set(re.findall(r"\{\{\s*([^}]+?)\s*\}\}", out)))
     for key in unresolved:
         cleaned = str(key).strip()
-        out = out.replace("{{" + cleaned + "}}", "")
-        out = out.replace("{{ " + cleaned + " }}", "")
+        marker = f"[UNAVAILABLE:{cleaned}]"
+        out = out.replace("{{" + cleaned + "}}", marker)
+        out = out.replace("{{ " + cleaned + " }}", marker)
     return out, unresolved
 
 
