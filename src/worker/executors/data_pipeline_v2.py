@@ -9,12 +9,60 @@ import numpy as np
 import pandas as pd
 
 
+_DATASET_ROWS_LOGGED = False
+
+
 def _mb(arr: np.ndarray) -> float:
     return round(float(arr.nbytes) / (1024.0 * 1024.0), 2)
 
 
 def _log(message: str) -> None:
     print(f"[data-v2] {message}", flush=True)
+
+
+def _log_dataset_rows_once(loaded_data: dict[str, np.ndarray]) -> None:
+    global _DATASET_ROWS_LOGGED
+    if _DATASET_ROWS_LOGGED:
+        return
+
+    row_map: dict[str, int] = {}
+    for key, arr in loaded_data.items():
+        if isinstance(arr, np.ndarray) and arr.ndim >= 1 and arr.shape[0] > 0:
+            row_map[str(key)] = int(arr.shape[0])
+
+    if not row_map:
+        return
+
+    unique_rows = sorted(set(row_map.values()))
+    if len(unique_rows) == 1:
+        _log(f"dataset rows={unique_rows[0]} (consistent across {len(row_map)} arrays)")
+    else:
+        preview = ", ".join([f"{k}:{v}" for k, v in sorted(row_map.items())[:6]])
+        _log(
+            "dataset row mismatch detected "
+            f"(min={min(unique_rows)}, max={max(unique_rows)}, arrays={len(row_map)}). "
+            f"sample={preview}"
+        )
+
+    _DATASET_ROWS_LOGGED = True
+
+
+def _safe_downcast_float16(arr: np.ndarray, label: str) -> np.ndarray:
+    if arr.dtype != np.float32:
+        arr = arr.astype(np.float32, copy=False)
+    if arr.size == 0:
+        return arr.astype(np.float16, copy=False)
+
+    min_value = float(np.nanmin(arr))
+    max_value = float(np.nanmax(arr))
+    f16 = np.finfo(np.float16)
+    if min_value < float(f16.min) or max_value > float(f16.max):
+        _log(
+            f"float16 overflow risk a {label} (min={min_value:.4g}, max={max_value:.4g}); "
+            "fallback a float32"
+        )
+        return arr
+    return arr.astype(np.float16, copy=False)
 
 
 def load_experiment_config(experiment_config_file: str) -> dict[str, Any]:
@@ -83,7 +131,7 @@ def load_all_raw_data_sources(
 
             arr = pd.read_csv(file_path, header=None, dtype=np.float32).values
             if dtype_norm == "float16":
-                arr = arr.astype(np.float16)
+                arr = _safe_downcast_float16(arr, file_name)
             loaded_data[csv_key] = arr
             current_mb = _mb(arr)
             total_loaded_mb += current_mb
@@ -96,7 +144,7 @@ def load_all_raw_data_sources(
             try:
                 arr = pd.read_csv(file_path, header=None).values.astype(np.float32)
                 if dtype_norm == "float16":
-                    arr = arr.astype(np.float16)
+                    arr = _safe_downcast_float16(arr, file_name)
                 loaded_data[csv_key] = arr
                 total_loaded_mb += _mb(arr)
                 try:
@@ -108,6 +156,7 @@ def load_all_raw_data_sources(
                 loaded_data[csv_key] = np.array([], dtype=np.float32)
 
     _log(f"fonts carregades: {len(loaded_data)} arrays ~{round(total_loaded_mb, 2)}MB")
+    _log_dataset_rows_once(loaded_data)
     return loaded_data
 
 

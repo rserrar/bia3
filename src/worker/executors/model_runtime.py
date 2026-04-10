@@ -973,17 +973,15 @@ def render_model_plot_png_base64(model_definition_full: dict[str, Any], feature_
         return None
 
 
-def run_smoke_fit_real_data(
+def _prepare_real_fit_context(
     model_definition_full: dict[str, Any],
     *,
     experiment_config_file: str,
     base_data_dir: str,
-    max_rows: int = 4096,
-    batch_size: int = 16,
-    cache_dtype: str = "float32",
-    use_memmap_cache: bool = True,
-) -> dict[str, Any]:
-    tf = _tf()
+    max_rows: int,
+    cache_dtype: str,
+    use_memmap_cache: bool,
+) -> tuple[Any, dict[str, np.ndarray], dict[str, np.ndarray], int]:
     exp = load_experiment_config(experiment_config_file)
     input_cfg_value = exp.get("input_features_config", [])
     output_cfg_value = exp.get("output_targets_config", [])
@@ -1113,6 +1111,41 @@ def run_smoke_fit_real_data(
         raise RuntimeError("real data arrays are empty")
     n = min(min(lengths), max(8, int(max_rows)))
 
+    del raw
+    del all_data
+    gc.collect()
+    return model, x_data, y_map, n
+
+
+def _extract_mae_from_history(history_data: dict[str, list[Any]]) -> float:
+    if "mae" in history_data and history_data["mae"]:
+        return float(history_data["mae"][-1])
+    mae_keys = sorted([key for key in history_data.keys() if key.endswith("_mae") and history_data.get(key)])
+    if mae_keys:
+        return float(np.mean([float(history_data[key][-1]) for key in mae_keys]))
+    return 0.0
+
+
+def run_smoke_fit_real_data(
+    model_definition_full: dict[str, Any],
+    *,
+    experiment_config_file: str,
+    base_data_dir: str,
+    max_rows: int = 4096,
+    batch_size: int = 16,
+    cache_dtype: str = "float32",
+    use_memmap_cache: bool = True,
+) -> dict[str, Any]:
+    tf = _tf()
+    model, x_data, y_map, n = _prepare_real_fit_context(
+        model_definition_full,
+        experiment_config_file=experiment_config_file,
+        base_data_dir=base_data_dir,
+        max_rows=max_rows,
+        cache_dtype=cache_dtype,
+        use_memmap_cache=use_memmap_cache,
+    )
+
     batch = max(1, int(batch_size))
     if cache_dtype == "float16":
         fit_dtype = "float16"
@@ -1162,9 +1195,120 @@ def run_smoke_fit_real_data(
                     mae_values.append(float(np.mean(batch_maes)))
 
     tf.keras.backend.clear_session()
-    del raw
-    del all_data
     gc.collect()
     loss = float(np.mean(loss_values)) if loss_values else 0.0
     mae = float(np.mean(mae_values)) if mae_values else 0.0
     return {"loss": loss, "mae": mae, "samples": n}
+
+
+def run_full_fit_real_data(
+    model_definition_full: dict[str, Any],
+    *,
+    experiment_config_file: str,
+    base_data_dir: str,
+    max_rows: int = 4096,
+    batch_size: int = 256,
+    epochs: int = 500,
+    validation_split: float = 0.15,
+    early_stopping_patience: int = 15,
+    reduce_lr_patience: int = 7,
+    reduce_lr_factor: float = 0.5,
+    min_lr: float = 0.000001,
+    restore_best_weights: bool = True,
+    verbose: int = 1,
+    cache_dtype: str = "float32",
+    use_memmap_cache: bool = True,
+) -> dict[str, Any]:
+    tf = _tf()
+    model, x_data, y_map, n = _prepare_real_fit_context(
+        model_definition_full,
+        experiment_config_file=experiment_config_file,
+        base_data_dir=base_data_dir,
+        max_rows=max_rows,
+        cache_dtype=cache_dtype,
+        use_memmap_cache=use_memmap_cache,
+    )
+
+    fit_dtype = "float16" if cache_dtype == "float16" else "float32"
+    x_fit = {name: _sanitize_real_array(arr[:n], f"input:{name}", target_dtype=fit_dtype) for name, arr in x_data.items()}
+    if len(model.outputs) == 1:
+        output_name = model.output_names[0]
+        if output_name in y_map:
+            y_fit: Any = _sanitize_real_array(y_map[output_name][:n], f"target:{output_name}", target_dtype=fit_dtype)
+        else:
+            first_name, first_arr = next(iter(y_map.items()))
+            y_fit = _sanitize_real_array(first_arr[:n], f"target:{first_name}", target_dtype=fit_dtype)
+    else:
+        y_fit = {
+            name: _sanitize_real_array(y_map[name][:n], f"target:{name}", target_dtype=fit_dtype)
+            for name in model.output_names
+            if name in y_map
+        }
+        if len(y_fit) != len(model.output_names):
+            missing = [name for name in model.output_names if name not in y_fit]
+            raise RuntimeError(f"missing real target data for output heads: {', '.join(missing)}")
+
+    resolved_validation_split = float(validation_split)
+    if resolved_validation_split < 0.0:
+        resolved_validation_split = 0.0
+    if resolved_validation_split >= 0.5:
+        resolved_validation_split = 0.49
+
+    monitor_metric = "val_loss" if resolved_validation_split > 0.0 else "loss"
+    callbacks = [
+        tf.keras.callbacks.EarlyStopping(
+            monitor=monitor_metric,
+            patience=max(1, int(early_stopping_patience)),
+            restore_best_weights=bool(restore_best_weights),
+            verbose=max(0, int(verbose)),
+        ),
+        tf.keras.callbacks.ReduceLROnPlateau(
+            monitor=monitor_metric,
+            factor=float(reduce_lr_factor),
+            patience=max(1, int(reduce_lr_patience)),
+            min_lr=max(0.0, float(min_lr)),
+            verbose=max(0, int(verbose)),
+        ),
+    ]
+
+    history = model.fit(
+        x_fit,
+        y_fit,
+        epochs=max(1, int(epochs)),
+        batch_size=max(1, int(batch_size)),
+        verbose=max(0, int(verbose)),
+        validation_split=resolved_validation_split,
+        callbacks=callbacks,
+        shuffle=True,
+    )
+
+    history_data = history.history if isinstance(history.history, dict) else {}
+    loss_curve = [float(v) for v in history_data.get("loss", []) if v is not None]
+    val_loss_curve = [float(v) for v in history_data.get("val_loss", []) if v is not None]
+    epochs_ran = len(loss_curve) if loss_curve else max(1, int(epochs))
+    if val_loss_curve:
+        best_epoch = int(np.argmin(np.array(val_loss_curve))) + 1
+        best_val_loss = float(np.min(np.array(val_loss_curve)))
+    elif loss_curve:
+        best_epoch = int(np.argmin(np.array(loss_curve))) + 1
+        best_val_loss = float(np.min(np.array(loss_curve)))
+    else:
+        best_epoch = 1
+        best_val_loss = 0.0
+
+    final_loss = float(loss_curve[-1]) if loss_curve else 0.0
+    final_val_loss = float(val_loss_curve[-1]) if val_loss_curve else final_loss
+    final_mae = _extract_mae_from_history(history_data)
+
+    tf.keras.backend.clear_session()
+    gc.collect()
+    return {
+        "loss": final_val_loss,
+        "mae": final_mae,
+        "train_loss": final_loss,
+        "val_loss": final_val_loss,
+        "epochs_ran": epochs_ran,
+        "best_epoch": best_epoch,
+        "best_val_loss": best_val_loss,
+        "samples": n,
+    }

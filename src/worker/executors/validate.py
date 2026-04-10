@@ -3,7 +3,7 @@ from typing import Any, cast
 
 from src.shared.settings import load_settings
 from .llm_client import normalize_llm_candidate_payload, repair_model_definition_via_openai
-from .model_runtime import run_smoke_fit, run_smoke_fit_real_data
+from .model_runtime import run_smoke_fit_real_data
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -267,23 +267,17 @@ def validate_model_definition_schema(model_definition_full: dict[str, Any]) -> l
 def _run_runtime_validation(payload: dict[str, Any], model_definition_full: dict[str, Any]) -> dict[str, Any]:
     settings = load_settings()
     use_real_data = bool(payload.get("use_real_data", settings.real_data_mode))
-    if use_real_data:
-        smoke_result = run_smoke_fit_real_data(
-            model_definition_full=model_definition_full,
-            experiment_config_file=settings.experiment_config_file,
-            base_data_dir=settings.data_dir,
-            max_rows=int(payload.get("max_real_rows", settings.max_real_rows) or settings.max_real_rows),
-            batch_size=int(payload.get("batch_size", 8) or 8),
-            cache_dtype=settings.data_cache_dtype,
-            use_memmap_cache=settings.use_memmap_cache,
-        )
-    else:
-        smoke_result = run_smoke_fit(
-            model_definition_full=model_definition_full,
-            smoke_batches=int(payload.get("smoke_batches", 3) or 3),
-            feature_dim=int(payload.get("feature_dim", 16) or 16),
-            batch_size=int(payload.get("batch_size", 8) or 8),
-        )
+    if not use_real_data:
+        raise RuntimeError("validate_candidate requires real data mode (set V3_REAL_DATA_MODE=true)")
+    smoke_result = run_smoke_fit_real_data(
+        model_definition_full=model_definition_full,
+        experiment_config_file=settings.experiment_config_file,
+        base_data_dir=settings.data_dir,
+        max_rows=int(payload.get("max_real_rows", settings.max_real_rows) or settings.max_real_rows),
+        batch_size=int(payload.get("batch_size", 8) or 8),
+        cache_dtype=settings.data_cache_dtype,
+        use_memmap_cache=settings.use_memmap_cache,
+    )
     return smoke_result
 
 

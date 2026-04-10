@@ -24,6 +24,15 @@ class Settings:
     max_real_rows: int
     data_cache_dtype: str
     use_memmap_cache: bool
+    train_epochs: int
+    train_batch_size: int
+    train_verbose: int
+    train_validation_split: float
+    train_early_stopping_patience: int
+    train_reduce_lr_patience: int
+    train_reduce_lr_factor: float
+    train_min_lr: float
+    train_restore_best_weights: bool
 
 
 def load_settings() -> Settings:
@@ -48,4 +57,13 @@ def load_settings() -> Settings:
         max_real_rows=int(os.getenv("V3_MAX_REAL_ROWS", "4096")),
         data_cache_dtype=os.getenv("V3_DATA_CACHE_DTYPE", "float32").strip().lower(),
         use_memmap_cache=os.getenv("V3_USE_MEMMAP_CACHE", "true").lower() in {"1", "true", "yes"},
+        train_epochs=max(1, int(os.getenv("V3_TRAIN_EPOCHS", "500") or 500)),
+        train_batch_size=max(1, int(os.getenv("V3_TRAIN_BATCH_SIZE", "1024") or 1024)),
+        train_verbose=max(0, int(os.getenv("V3_TRAIN_VERBOSE", "1") or 1)),
+        train_validation_split=float(os.getenv("V3_TRAIN_VALIDATION_SPLIT", "0.15") or 0.15),
+        train_early_stopping_patience=max(1, int(os.getenv("V3_TRAIN_EARLY_STOPPING_PATIENCE", "15") or 15)),
+        train_reduce_lr_patience=max(1, int(os.getenv("V3_TRAIN_REDUCE_LR_PATIENCE", "7") or 7)),
+        train_reduce_lr_factor=float(os.getenv("V3_TRAIN_REDUCE_LR_FACTOR", "0.5") or 0.5),
+        train_min_lr=float(os.getenv("V3_TRAIN_MIN_LR", "0.000001") or 0.000001),
+        train_restore_best_weights=os.getenv("V3_TRAIN_RESTORE_BEST_WEIGHTS", "true").lower() in {"1", "true", "yes"},
     )
