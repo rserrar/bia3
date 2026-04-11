@@ -120,7 +120,8 @@ def load_all_raw_data_sources(
                 mmap_mode = "r" if use_memmap_cache else None
                 arr = np.load(npy_path, mmap_mode=mmap_mode)
                 if dtype_norm == "float16" and arr.dtype != np.float16:
-                    arr = np.load(npy_path).astype(np.float16)
+                    arr_loaded = np.load(npy_path, mmap_mode=None).astype(np.float32, copy=False)
+                    arr = _safe_downcast_float16(arr_loaded, f"{file_name} (cache)")
                 if dtype_norm == "float32" and arr.dtype != np.float32:
                     arr = np.load(npy_path).astype(np.float32)
                 loaded_data[csv_key] = arr

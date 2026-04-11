@@ -5,7 +5,7 @@ import gc
 import os
 import tempfile
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 import numpy as np
 
@@ -906,7 +906,12 @@ def _sanitize_real_array(arr: np.ndarray, label: str, target_dtype: str | None =
         out = arr
     if not np.isfinite(out).all():
         print(f"[WARN] Non-finite values detected in {label}; sanitizing", flush=True)
-        out = np.nan_to_num(out, nan=0.0, posinf=1e6, neginf=-1e6)
+        if np.issubdtype(out.dtype, np.floating):
+            finfo = np.finfo(out.dtype)
+            clip = min(1e6, float(finfo.max) * 0.95)
+            out = np.nan_to_num(out, nan=0.0, posinf=clip, neginf=-clip)
+        else:
+            out = np.nan_to_num(out, nan=0.0, posinf=1e6, neginf=-1e6)
     return out
 
 
@@ -1227,6 +1232,7 @@ def run_full_fit_real_data(
     include_inline_artifacts: bool = True,
     include_full_model_artifact: bool = False,
     max_inline_artifact_mb: int = 32,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     tf = _tf()
     model, x_data, y_map, n = _prepare_real_fit_context(
@@ -1265,6 +1271,25 @@ def run_full_fit_real_data(
 
     monitor_metric = "val_loss" if resolved_validation_split > 0.0 else "loss"
     callback_verbose: Literal[0, 1] = 1 if max(0, int(verbose)) > 0 else 0
+    class _ProgressCallback(tf.keras.callbacks.Callback):
+        def on_epoch_end(self, epoch: int, logs: Any = None) -> None:
+            if progress_callback is None:
+                return
+            payload: dict[str, Any] = {
+                "phase": "fit_epoch_end",
+                "epoch": int(epoch) + 1,
+            }
+            if isinstance(logs, dict):
+                if "loss" in logs:
+                    payload["loss"] = float(logs.get("loss") or 0.0)
+                if "val_loss" in logs:
+                    payload["val_loss"] = float(logs.get("val_loss") or 0.0)
+                if "mae" in logs:
+                    payload["mae"] = float(logs.get("mae") or 0.0)
+                if "val_mae" in logs:
+                    payload["val_mae"] = float(logs.get("val_mae") or 0.0)
+            progress_callback(payload)
+
     callbacks = [
         tf.keras.callbacks.EarlyStopping(
             monitor=monitor_metric,
@@ -1279,6 +1304,7 @@ def run_full_fit_real_data(
             min_lr=max(0.0, float(min_lr)),
             verbose=callback_verbose,
         ),
+        _ProgressCallback(),
     ]
 
     history = model.fit(
