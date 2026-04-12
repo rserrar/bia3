@@ -218,7 +218,7 @@ def _build_prompt_context_from_payload(payload: dict[str, Any]) -> dict[str, Any
     if architecture_guide_content == "":
         architecture_guide_content = _read_text_if_exists(settings.architecture_guide_file)
 
-    target_candidates = max(1, _as_int(payload.get("target_candidates", 1), 1))
+    target_candidates = 1
 
     context: dict[str, Any] = {
         "num_new_models": str(target_candidates),

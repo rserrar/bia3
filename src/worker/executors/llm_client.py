@@ -248,11 +248,12 @@ def generate_candidate_via_openai(api_key: str, model: str, prompt: str, endpoin
         "messages": [
             {
                 "role": "system",
-                "content": "Return ONLY valid JSON with keys model_definition_full and model_definition_summary.",
+                "content": "Return ONLY valid JSON object with keys model_definition_full and model_definition_summary.",
             },
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.7,
+        "response_format": {"type": "json_object"},
     }
     data = json.dumps(body, ensure_ascii=False).encode("utf-8")
     req = urlrequest.Request(

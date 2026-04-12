@@ -1,6 +1,6 @@
 Mode: EXPLORATION
 
-Objectiu: proposar arquitectures diverses, però robustes i controlades.
+Objectiu: proposar una arquitectura nova, robusta i controlada, inspirada en bons models de famílies diferents sense fer-ne una còpia trivial.
 
 ### Context
 num_new_models={{num_new_models}}
@@ -26,9 +26,40 @@ available_outputs_description:
 ### Regles principals
 1. Inspira't en els models bons, però evita còpies trivials.
 2. Explora com a màxim 1-2 novetats per model.
-3. Prioritza arquitectures simples i entrenables.
-4. Evita nesting profund i wrappers innecessaris.
+3. Prioritza arquitectures simples, entrenables i estables.
+4. Explica clarament què canvies, què vols provar i quines serien les següents variants útils.
 5. Si dubtes, tria la versió més simple i robusta.
+
+### Camps obligatoris de context experimental
+Has de retornar aquests camps dins `model_definition_full`:
+- `model_id`
+- `version`
+- `description`
+- `change_log`
+- `llm_reasoning`
+- `potential_next_variations`
+- `seed`
+- `architecture_definition`
+- `training_config`
+
+### Contingut obligatori dels camps de text
+- `description`: resum curt i concret del disseny i la seva intenció.
+- `change_log`: llista de canvis concrets respecte als models de referència globals.
+- `llm_reasoning`: hipòtesi principal, què esperes millorar o comprovar, i per què aquesta proposta és diferent.
+- `potential_next_variations`: 2-4 idees concretes per a futures iteracions.
+
+### model_definition_summary obligatori
+`model_definition_summary` ha de ser un objecte curt però útil amb aquests camps obligatoris:
+- `kind`
+- `focus`
+- `inputs`
+- `outputs`
+- `complexity`
+- `expected_behavior`
+- `change_strategy`
+- `what_changed`
+- `experiment_goal`
+- `next_variations`
 
 ### Guardrails d'arquitectura
 - `architecture_definition` obligatori.
@@ -103,27 +134,41 @@ Si utilitzes `merges`, cada merge ha de seguir aquest format mínim:
 Verifica internament:
 - JSON vàlid
 - camps obligatoris presents
+- `description`, `change_log`, `llm_reasoning`, `potential_next_variations` plens
+- `model_definition_summary` amb tots els camps obligatoris
 - inputs/outputs consistents
 - capes suportades
 - que el JSON parseja correctament en un parser JSON estàndard
 - que no hi ha claus legacy prohibides
 
 ### Sortida (OBLIGATÒRIA)
-Return ONLY valid JSON. Do not include any extra text.
+Return ONLY one valid JSON object. Do not include any extra text.
 Before returning, validate that the response is valid JSON and parseable.
 
-Si `num_new_models` == 1:
+```json
 {
-  "model_definition_full": { ... },
+  "model_definition_full": {
+    "model_id": "llm_generated_placeholder",
+    "version": "1.0.0",
+    "description": "...",
+    "change_log": ["..."],
+    "llm_reasoning": "...",
+    "potential_next_variations": ["...", "..."],
+    "seed": 42,
+    "architecture_definition": {},
+    "training_config": {}
+  },
   "model_definition_summary": {
     "kind": "...",
     "focus": "...",
     "inputs": 0,
     "outputs": 0,
     "complexity": "low|medium|high",
-    "expected_behavior": "..."
+    "expected_behavior": "...",
+    "change_strategy": "...",
+    "what_changed": "...",
+    "experiment_goal": "...",
+    "next_variations": ["...", "..."]
   }
 }
-
-Si `num_new_models` > 1:
-[ {"model_definition_full": {...}, "model_definition_summary": {...}}, ... ]
+```
