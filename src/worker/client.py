@@ -43,6 +43,9 @@ class WorkerApiClient:
     def heartbeat(self, task_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         return self._post(f"/tasks/{task_id}/heartbeat", payload)
 
+    def progress(self, task_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._post(f"/tasks/{task_id}/progress", payload)
+
     def complete(self, task_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         return self._post(f"/tasks/{task_id}/complete", payload)
 

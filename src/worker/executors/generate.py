@@ -6,6 +6,7 @@ from typing import Any
 
 from src.shared.settings import load_settings
 from .llm_client import LlmRequestError, generate_candidate_via_openai, normalize_llm_candidate_payload
+from ..progress import report_progress
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -37,6 +38,25 @@ def _as_int(value: Any, default: int) -> int:
         return int(value)
     except Exception:
         return default
+
+
+def _extract_parent_model_id(payload: dict[str, Any]) -> str | None:
+    direct = str(payload.get("parent_model_id", "")).strip()
+    if direct:
+        return direct
+
+    prompt_context = _as_dict(payload.get("prompt_context"))
+    parent_model = _as_dict(prompt_context.get("parent_model"))
+    parent_id = str(parent_model.get("model_id", "")).strip()
+    if parent_id:
+        return parent_id
+
+    family_summary = _as_dict(prompt_context.get("family_metrics_summary"))
+    parent_id = str(family_summary.get("parent_model_id", "")).strip()
+    if parent_id:
+        return parent_id
+
+    return None
 
 
 def _resolve_repo_path(file_path: str) -> Path:
@@ -698,8 +718,11 @@ def execute_generate_candidate(payload: dict) -> dict:
     effective_context.update(nested_context)
 
     target = int(payload.get("target_candidates", 1) or 1)
+    parent_model_id = _extract_parent_model_id(payload)
+    report_progress({"phase": "generate_started", "target_candidates": max(1, target), "mode": mode})
     candidates = []
-    for _ in range(max(1, target)):
+    for idx in range(max(1, target)):
+        report_progress({"phase": "generate_candidate_request", "index": idx + 1, "total": max(1, target), "mode": mode})
         candidate_id = f"cand_{uuid4().hex[:12]}"
         llm_out, llm_trace, fallback_reason = _candidate_from_llm(
             candidate_id,
@@ -743,6 +766,9 @@ def execute_generate_candidate(payload: dict) -> dict:
                 "model_definition_full": model_full,
                 "model_definition_summary": model_summary,
                 "llm_metadata": llm_metadata,
+                "parent_model_id": parent_model_id,
             }
         )
+        report_progress({"phase": "generate_candidate_done", "index": idx + 1, "total": max(1, target), "candidate_id": candidate_id})
+    report_progress({"phase": "generate_completed", "count": len(candidates), "mode": mode})
     return {"status": "completed", "candidates": candidates}

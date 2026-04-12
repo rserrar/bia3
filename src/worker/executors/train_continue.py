@@ -4,6 +4,7 @@ from typing import Any
 
 from src.shared.settings import load_settings
 from .model_runtime import run_full_fit_real_data, render_model_plot_png_base64
+from ..progress import report_progress
 
 
 def _resolve_training_config(payload: dict[str, Any], settings: Any) -> dict[str, Any]:
@@ -57,6 +58,7 @@ def execute_train_continue(payload: dict) -> dict:
     training_history: dict[str, Any] = {}
     inline_artifacts: list[dict[str, Any]] = []
     model_definition_full = payload.get("model_definition_full") if isinstance(payload.get("model_definition_full"), dict) else {}
+    report_progress({"phase": "train_continue_started", "parent_model_id": parent_model_id})
     if model_definition_full:
         try:
             use_real_data = bool(payload.get("use_real_data", settings.real_data_mode))
@@ -89,6 +91,7 @@ def execute_train_continue(payload: dict) -> dict:
                 include_inline_artifacts=settings.train_include_inline_artifacts,
                 include_full_model_artifact=settings.train_include_full_model_artifact,
                 max_inline_artifact_mb=settings.train_max_inline_artifact_mb,
+                progress_callback=report_progress,
             )
             kpis["val_loss"] = float(full_fit.get("val_loss", kpis["val_loss"]))
             kpis["val_mae"] = float(full_fit.get("mae", kpis["val_mae"]))
@@ -121,6 +124,7 @@ def execute_train_continue(payload: dict) -> dict:
             if isinstance(artifacts_raw, list):
                 inline_artifacts = [item for item in artifacts_raw if isinstance(item, dict)]
         except Exception as error:
+            report_progress({"phase": "train_continue_failed", "error": str(error)})
             return {
                 "status": "failed",
                 "error": {
@@ -154,4 +158,5 @@ def execute_train_continue(payload: dict) -> dict:
         result["training_history"] = training_history
     if inline_artifacts:
         result["inline_artifacts"] = inline_artifacts
+    report_progress({"phase": "train_continue_completed", "model_id": model_id, "val_loss": kpis.get("val_loss")})
     return result

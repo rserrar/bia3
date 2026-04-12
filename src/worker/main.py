@@ -1,4 +1,5 @@
 import time
+import threading
 from uuid import uuid4
 from typing import Any, cast
 
@@ -7,6 +8,7 @@ from .executors.validate import execute_validate_candidate
 from .executors.train import execute_train_model
 from .executors.train_continue import execute_train_continue
 from .client import WorkerApiClient
+from .progress import set_reporter, clear_reporter
 from src.shared.settings import load_settings
 
 
@@ -96,7 +98,29 @@ def run_worker_loop() -> None:
             print(f"[INFO] Sending heartbeat -> server task_id={task_id}", flush=True)
             client.heartbeat(task_id, {"worker_id": settings.worker_id, "progress": {"phase": "started"}})
 
-            result = execute_task(task)
+            stop_heartbeat = threading.Event()
+
+            def _heartbeat_loop() -> None:
+                while not stop_heartbeat.wait(settings.worker_heartbeat_seconds):
+                    try:
+                        client.heartbeat(task_id, {"worker_id": settings.worker_id})
+                    except Exception as hb_error:
+                        print(f"[WARN] Heartbeat failed task_id={task_id}: {hb_error}", flush=True)
+
+            hb_thread = threading.Thread(target=_heartbeat_loop, daemon=True)
+            hb_thread.start()
+
+            def _report(progress: dict[str, Any]) -> None:
+                client.progress(task_id, {"worker_id": settings.worker_id, "progress": progress})
+
+            set_reporter(_report)
+            try:
+                result = execute_task(task)
+            finally:
+                clear_reporter()
+                stop_heartbeat.set()
+                hb_thread.join(timeout=2.0)
+
             idem_key = f"{task_id}:{attempt}:{uuid4().hex[:8]}"
             if str(result.get("status", "completed")) == "failed":
                 error_payload = result.get("error") if isinstance(result.get("error"), dict) else {

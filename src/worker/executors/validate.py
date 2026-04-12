@@ -4,6 +4,7 @@ from typing import Any, cast
 from src.shared.settings import load_settings
 from .llm_client import normalize_llm_candidate_payload, repair_model_definition_via_openai
 from .model_runtime import run_smoke_fit_real_data
+from ..progress import report_progress
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -324,6 +325,7 @@ def execute_validate_candidate(payload: dict) -> dict:
         model_definition_full = {}
 
     force_fail = bool(payload.get("force_fail", False))
+    report_progress({"phase": "validate_started", "force_fail": force_fail})
     schema_errors = validate_model_definition_schema(model_definition_full)
     schema_ok = len(schema_errors) == 0
 
@@ -342,10 +344,12 @@ def execute_validate_candidate(payload: dict) -> dict:
 
     if schema_ok and not force_fail:
         try:
+            report_progress({"phase": "validate_runtime_start"})
             smoke_result = _run_runtime_validation(payload, model_definition_full)
             build_ok = True
             compile_ok = True
             smoke_ok = True
+            report_progress({"phase": "validate_runtime_done"})
         except Exception as error:
             error_type = type(error).__name__
             error_message = str(error)
@@ -422,4 +426,11 @@ def execute_validate_candidate(payload: dict) -> dict:
     }
     if repaired_model_definition_full is not None:
         result["repaired_model_definition_full"] = repaired_model_definition_full
+    report_progress({
+        "phase": "validate_completed",
+        "schema_ok": schema_ok,
+        "build_ok": build_ok,
+        "compile_ok": compile_ok,
+        "smoke_fit_ok": smoke_ok,
+    })
     return result
