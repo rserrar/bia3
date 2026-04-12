@@ -38,6 +38,19 @@ def _base_llm_trace(*, model: str, endpoint: str, prompt: str) -> dict[str, Any]
     }
 
 
+def _json_safe_clone(value: Any) -> Any:
+    try:
+        return json.loads(json.dumps(value, ensure_ascii=False))
+    except Exception:
+        return None
+
+
+def _trace_snapshot(llm_trace: dict[str, Any]) -> dict[str, Any]:
+    snapshot = dict(llm_trace)
+    snapshot["response_parsed"] = _json_safe_clone(snapshot.get("response_parsed"))
+    return snapshot
+
+
 def _extract_balanced_payload(text: str, start: int, opening: str, closing: str) -> str:
     depth = 0
     in_string = False
@@ -306,7 +319,7 @@ def generate_candidate_via_openai(api_key: str, model: str, prompt: str, endpoin
         raise LlmRequestError(f"LLM parse error: {error}", llm_trace) from error
 
     llm_trace["parse_ok"] = True
-    llm_trace["response_parsed"] = parsed if isinstance(parsed, (dict, list)) else None
+    llm_trace["response_parsed"] = _json_safe_clone(parsed if isinstance(parsed, (dict, list)) else None)
     print("[LLM] parse_ok=True", flush=True)
 
     if isinstance(parsed, dict):
@@ -315,7 +328,7 @@ def generate_candidate_via_openai(api_key: str, model: str, prompt: str, endpoin
         parsed["_llm_prompt_text"] = _truncate(prompt)
         parsed["_llm_model"] = model
         parsed["_llm_endpoint"] = endpoint
-        parsed["_llm_trace"] = llm_trace
+        parsed["_llm_trace"] = _trace_snapshot(llm_trace)
         return parsed
     return {
         "_llm_parsed_payload": parsed,
@@ -324,7 +337,7 @@ def generate_candidate_via_openai(api_key: str, model: str, prompt: str, endpoin
         "_llm_prompt_text": _truncate(prompt),
         "_llm_model": model,
         "_llm_endpoint": endpoint,
-        "_llm_trace": llm_trace,
+        "_llm_trace": _trace_snapshot(llm_trace),
     }
 
 
