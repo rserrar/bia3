@@ -7,6 +7,7 @@ from .executors.generate import execute_generate_candidate
 from .executors.validate import execute_validate_candidate
 from .executors.train import execute_train_model
 from .executors.train_continue import execute_train_continue
+from .executors.recommend_train_continue import execute_recommend_train_continue
 from .client import WorkerApiClient
 from .progress import set_reporter, clear_reporter
 from src.shared.settings import load_settings
@@ -25,6 +26,8 @@ def execute_task(task: dict[str, Any]) -> dict[str, Any]:
         return execute_train_model(payload)
     if task_type == "train_continue":
         return execute_train_continue(payload)
+    if task_type == "recommend_train_continue":
+        return execute_recommend_train_continue(payload)
 
     return {
         "status": "failed",
@@ -49,6 +52,7 @@ def run_worker_loop() -> None:
                 "validate_candidate",
                 "train_model",
                 "train_continue",
+                "recommend_train_continue",
             ]
         },
     }

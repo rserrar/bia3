@@ -3,7 +3,9 @@ from __future__ import annotations
 import base64
 import gc
 import os
+import random
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, Callable, Literal
 
@@ -142,15 +144,25 @@ def _get_multi_input_tensors(feature_maps: dict[str, Any], names_value: Any) -> 
     return tensors
 
 
-def _resolve_optimizer(tf: Any, optimizer_value: Any) -> Any:
+def _resolve_optimizer(tf: Any, optimizer_value: Any, learning_rate: float | None = None) -> Any:
     if isinstance(optimizer_value, str) and optimizer_value.strip() != "":
         try:
+            if learning_rate is not None:
+                opt_name = str(optimizer_value).strip()
+                cls = getattr(tf.keras.optimizers, opt_name, None)
+                if cls is None:
+                    cls = getattr(tf.keras.optimizers, opt_name[:1].upper() + opt_name[1:], None)
+                if cls is not None:
+                    return cls(learning_rate=learning_rate)
+                return tf.keras.optimizers.get({"class_name": opt_name, "config": {"learning_rate": learning_rate}})
             return tf.keras.optimizers.get(optimizer_value)
         except Exception:
             return tf.keras.optimizers.Adam()
     if isinstance(optimizer_value, dict):
         kind = str(optimizer_value.get("type", "Adam")).strip() or "Adam"
         params = {k: v for k, v in optimizer_value.items() if k != "type"}
+        if learning_rate is not None and "learning_rate" not in params:
+            params["learning_rate"] = learning_rate
         cls = getattr(tf.keras.optimizers, kind, None)
         if cls is not None:
             try:
@@ -162,6 +174,67 @@ def _resolve_optimizer(tf: Any, optimizer_value: Any) -> Any:
         except Exception:
             return tf.keras.optimizers.Adam()
     return tf.keras.optimizers.Adam()
+
+
+def _compile_model(
+    tf: Any,
+    model: Any,
+    model_definition_full: dict[str, Any],
+    output_meta: list[dict[str, Any]],
+    *,
+    optimizer_override: Any = None,
+    initial_learning_rate: float | None = None,
+) -> None:
+    training_config = _as_dict(model_definition_full.get("training_config"))
+    compile_config = _as_dict(training_config.get("compile"))
+    optimizer_value = optimizer_override if optimizer_override not in {None, ""} else compile_config.get("optimizer", "Adam")
+    optimizer = _resolve_optimizer(tf, optimizer_value, learning_rate=initial_learning_rate)
+
+    runtime_output_cfg = _as_list_of_dicts(model_definition_full.get("output_targets_config_runtime"))
+    runtime_by_target: dict[str, dict[str, Any]] = {}
+    runtime_by_layer: dict[str, dict[str, Any]] = {}
+    for item in runtime_output_cfg:
+        target_name = str(item.get("target_name", "")).strip()
+        default_layer_name = str(item.get("default_output_layer_name", "")).strip()
+        if target_name:
+            runtime_by_target[target_name] = item
+        if default_layer_name:
+            runtime_by_layer[default_layer_name] = item
+
+    if len(model.output_names) == 1:
+        output_name = model.output_names[0]
+        mapped = next((m for m in output_meta if m.get("output_layer_name") == output_name), {})
+        maps_to = str(mapped.get("maps_to_target_config_name", "")).strip()
+        cfg = runtime_by_target.get(maps_to) or runtime_by_layer.get(output_name) or {}
+        loss = str(cfg.get("loss_function", "mse"))
+        metrics_cfg = cfg.get("metrics", ["mae"])
+        if isinstance(metrics_cfg, str):
+            metrics = [metrics_cfg]
+        elif isinstance(metrics_cfg, list) and metrics_cfg:
+            metrics = [str(item) for item in metrics_cfg]
+        else:
+            metrics = ["mae"]
+        loss_weight = float(cfg.get("loss_weight", 1.0) or 1.0)
+        model.compile(optimizer=optimizer, loss=loss, metrics=metrics, loss_weights=loss_weight)
+        return
+
+    losses: dict[str, Any] = {}
+    metrics_map: dict[str, list[str]] = {}
+    loss_weights: dict[str, float] = {}
+    for output_name in model.output_names:
+        mapped = next((m for m in output_meta if m.get("output_layer_name") == output_name), {})
+        maps_to = str(mapped.get("maps_to_target_config_name", "")).strip()
+        cfg = runtime_by_target.get(maps_to) or runtime_by_layer.get(output_name) or {}
+        losses[output_name] = str(cfg.get("loss_function", "mse"))
+        metrics_cfg = cfg.get("metrics", ["mae"])
+        if isinstance(metrics_cfg, str):
+            metrics_map[output_name] = [metrics_cfg]
+        elif isinstance(metrics_cfg, list) and metrics_cfg:
+            metrics_map[output_name] = [str(item) for item in metrics_cfg]
+        else:
+            metrics_map[output_name] = ["mae"]
+        loss_weights[output_name] = float(cfg.get("loss_weight", 1.0) or 1.0)
+    model.compile(optimizer=optimizer, loss=losses, metrics=metrics_map, loss_weights=loss_weights)
 
 
 def _require_positive_int(value: Any, param_name: str, layer_name: str | None, default: int | None = None) -> int:
@@ -847,54 +920,7 @@ def build_keras_model(
 
     model = tf.keras.Model(inputs=list(input_layers.values()), outputs=outputs if len(outputs) > 1 else outputs[0])
 
-    training_config = _as_dict(model_definition_full.get("training_config"))
-    compile_config = _as_dict(training_config.get("compile"))
-    optimizer = _resolve_optimizer(tf, compile_config.get("optimizer", "Adam"))
-
-    runtime_output_cfg = _as_list_of_dicts(model_definition_full.get("output_targets_config_runtime"))
-    runtime_by_target: dict[str, dict[str, Any]] = {}
-    runtime_by_layer: dict[str, dict[str, Any]] = {}
-    for item in runtime_output_cfg:
-        target_name = str(item.get("target_name", "")).strip()
-        default_layer_name = str(item.get("default_output_layer_name", "")).strip()
-        if target_name:
-            runtime_by_target[target_name] = item
-        if default_layer_name:
-            runtime_by_layer[default_layer_name] = item
-
-    if len(model.output_names) == 1:
-        output_name = model.output_names[0]
-        mapped = next((m for m in output_meta if m.get("output_layer_name") == output_name), {})
-        maps_to = str(mapped.get("maps_to_target_config_name", "")).strip()
-        cfg = runtime_by_target.get(maps_to) or runtime_by_layer.get(output_name) or {}
-        loss = str(cfg.get("loss_function", "mse"))
-        metrics_cfg = cfg.get("metrics", ["mae"])
-        if isinstance(metrics_cfg, str):
-            metrics = [metrics_cfg]
-        elif isinstance(metrics_cfg, list) and metrics_cfg:
-            metrics = [str(item) for item in metrics_cfg]
-        else:
-            metrics = ["mae"]
-        loss_weight = float(cfg.get("loss_weight", 1.0) or 1.0)
-        model.compile(optimizer=optimizer, loss=loss, metrics=metrics, loss_weights=loss_weight)
-    else:
-        losses: dict[str, Any] = {}
-        metrics_map: dict[str, list[str]] = {}
-        loss_weights: dict[str, float] = {}
-        for output_name in model.output_names:
-            mapped = next((m for m in output_meta if m.get("output_layer_name") == output_name), {})
-            maps_to = str(mapped.get("maps_to_target_config_name", "")).strip()
-            cfg = runtime_by_target.get(maps_to) or runtime_by_layer.get(output_name) or {}
-            losses[output_name] = str(cfg.get("loss_function", "mse"))
-            metrics_cfg = cfg.get("metrics", ["mae"])
-            if isinstance(metrics_cfg, str):
-                metrics_map[output_name] = [metrics_cfg]
-            elif isinstance(metrics_cfg, list) and metrics_cfg:
-                metrics_map[output_name] = [str(item) for item in metrics_cfg]
-            else:
-                metrics_map[output_name] = ["mae"]
-            loss_weights[output_name] = float(cfg.get("loss_weight", 1.0) or 1.0)
-        model.compile(optimizer=optimizer, loss=losses, metrics=metrics_map, loss_weights=loss_weights)
+    _compile_model(tf, model, model_definition_full, output_meta)
 
     return model, list(input_layers.keys()), list(model.output_names)
 
@@ -1132,6 +1158,32 @@ def _extract_mae_from_history(history_data: dict[str, list[Any]]) -> float:
     return 0.0
 
 
+def _set_global_seeds(seed: int) -> None:
+    try:
+        random.seed(seed)
+    except Exception:
+        pass
+    try:
+        np.random.seed(seed)
+    except Exception:
+        pass
+    try:
+        tf = _tf()
+        tf.keras.utils.set_random_seed(seed)
+    except Exception:
+        pass
+
+
+def _resolve_monitor_metric(target_metric: str, validation_split: float) -> str:
+    metric = str(target_metric or "val_loss").strip() or "val_loss"
+    has_validation = float(validation_split) > 0.0
+    if has_validation and not metric.startswith("val_"):
+        return f"val_{metric}"
+    if not has_validation and metric.startswith("val_"):
+        return metric[4:] or "loss"
+    return metric
+
+
 def _encode_file_base64(path: str) -> str:
     with open(path, "rb") as handle:
         return base64.b64encode(handle.read()).decode("ascii")
@@ -1227,6 +1279,12 @@ def run_full_fit_real_data(
     min_lr: float = 0.000001,
     restore_best_weights: bool = True,
     verbose: int = 1,
+    initial_learning_rate: float | None = None,
+    optimizer_name: str | None = None,
+    seed: int = 42,
+    target_metric: str = "val_loss",
+    target_metric_mode: str = "min",
+    max_training_minutes: int = 0,
     cache_dtype: str = "float32",
     use_memmap_cache: bool = True,
     include_inline_artifacts: bool = True,
@@ -1235,6 +1293,7 @@ def run_full_fit_real_data(
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     tf = _tf()
+    _set_global_seeds(int(seed))
     model, x_data, y_map, n = _prepare_real_fit_context(
         model_definition_full,
         experiment_config_file=experiment_config_file,
@@ -1242,6 +1301,14 @@ def run_full_fit_real_data(
         max_rows=max_rows,
         cache_dtype=cache_dtype,
         use_memmap_cache=use_memmap_cache,
+    )
+    _compile_model(
+        tf,
+        model,
+        model_definition_full,
+        [{"output_layer_name": name, "maps_to_target_config_name": name} for name in model.output_names],
+        optimizer_override=(optimizer_name or None),
+        initial_learning_rate=initial_learning_rate,
     )
 
     fit_dtype = "float16" if cache_dtype == "float16" else "float32"
@@ -1269,7 +1336,8 @@ def run_full_fit_real_data(
     if resolved_validation_split >= 0.5:
         resolved_validation_split = 0.49
 
-    monitor_metric = "val_loss" if resolved_validation_split > 0.0 else "loss"
+    monitor_metric = _resolve_monitor_metric(target_metric, resolved_validation_split)
+    monitor_mode = "max" if str(target_metric_mode).strip().lower() == "max" else "min"
     callback_verbose: Literal[0, 1] = 1 if max(0, int(verbose)) > 0 else 0
     class _ProgressCallback(tf.keras.callbacks.Callback):
         def on_epoch_end(self, epoch: int, logs: Any = None) -> None:
@@ -1290,21 +1358,36 @@ def run_full_fit_real_data(
                     payload["val_mae"] = float(logs.get("val_mae") or 0.0)
             progress_callback(payload)
 
+    class _TimeBudgetCallback(tf.keras.callbacks.Callback):
+        def __init__(self, budget_minutes: int) -> None:
+            super().__init__()
+            self.budget_seconds = max(0, int(budget_minutes)) * 60
+            self.started_at = time.time()
+
+        def on_epoch_end(self, epoch: int, logs: Any = None) -> None:
+            if self.budget_seconds <= 0:
+                return
+            if (time.time() - self.started_at) >= self.budget_seconds:
+                self.model.stop_training = True
+
     callbacks = [
         tf.keras.callbacks.EarlyStopping(
             monitor=monitor_metric,
+            mode=monitor_mode,
             patience=max(1, int(early_stopping_patience)),
             restore_best_weights=bool(restore_best_weights),
             verbose=callback_verbose,
         ),
         tf.keras.callbacks.ReduceLROnPlateau(
             monitor=monitor_metric,
+            mode=monitor_mode,
             factor=float(reduce_lr_factor),
             patience=max(1, int(reduce_lr_patience)),
             min_lr=max(0.0, float(min_lr)),
             verbose=callback_verbose,
         ),
         _ProgressCallback(),
+        _TimeBudgetCallback(max_training_minutes),
     ]
 
     history = model.fit(
@@ -1321,7 +1404,19 @@ def run_full_fit_real_data(
     history_data = history.history if isinstance(history.history, dict) else {}
     loss_curve = [float(v) for v in history_data.get("loss", []) if v is not None]
     val_loss_curve = [float(v) for v in history_data.get("val_loss", []) if v is not None]
+    monitor_curve = [float(v) for v in history_data.get(monitor_metric, []) if v is not None]
     epochs_ran = len(loss_curve) if loss_curve else max(1, int(epochs))
+    if monitor_curve:
+        monitor_arr = np.array(monitor_curve)
+        if monitor_mode == "max":
+            best_epoch = int(np.argmax(monitor_arr)) + 1
+            best_target_metric = float(np.max(monitor_arr))
+        else:
+            best_epoch = int(np.argmin(monitor_arr)) + 1
+            best_target_metric = float(np.min(monitor_arr))
+    else:
+        best_target_metric = 0.0
+
     if val_loss_curve:
         best_epoch = int(np.argmin(np.array(val_loss_curve))) + 1
         best_val_loss = float(np.min(np.array(val_loss_curve)))
@@ -1428,6 +1523,9 @@ def run_full_fit_real_data(
         "mae": final_mae,
         "train_loss": final_loss,
         "val_loss": final_val_loss,
+        "target_metric": monitor_metric,
+        "target_metric_mode": monitor_mode,
+        "target_metric_value": best_target_metric,
         "epochs_ran": epochs_ran,
         "best_epoch": best_epoch,
         "best_val_loss": best_val_loss,

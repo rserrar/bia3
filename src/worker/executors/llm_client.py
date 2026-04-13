@@ -141,6 +141,73 @@ def normalize_llm_candidate_payload(payload: dict | list) -> dict:
     return {}
 
 
+def normalize_llm_training_recommendation(payload: dict | list) -> dict[str, Any]:
+    if isinstance(payload, dict):
+        parsed_payload: Any = payload.get("_llm_parsed_payload")
+        if isinstance(parsed_payload, (dict, list)):
+            payload = parsed_payload
+    if isinstance(payload, list):
+        first = payload[0] if payload else {}
+        payload = first if isinstance(first, dict) else {}
+    if not isinstance(payload, dict):
+        return {}
+
+    decision = str(payload.get("decision", "")).strip().lower()
+    if decision not in {"continue", "stop", "retry_variant"}:
+        decision = "stop"
+
+    expected_benefit = str(payload.get("expected_benefit", "low")).strip().lower()
+    if expected_benefit not in {"low", "medium", "high"}:
+        expected_benefit = "low"
+    expected_cost = str(payload.get("expected_cost", "medium")).strip().lower()
+    if expected_cost not in {"low", "medium", "high"}:
+        expected_cost = "medium"
+    confidence = str(payload.get("confidence", "medium")).strip().lower()
+    if confidence not in {"low", "medium", "high"}:
+        confidence = "medium"
+
+    recommended_raw = payload.get("recommended_training_config")
+    recommended: dict[str, Any] = recommended_raw if isinstance(recommended_raw, dict) else {}
+    success_raw = payload.get("success_criteria")
+    success: dict[str, Any] = success_raw if isinstance(success_raw, dict) else {}
+
+    allowed = {
+        "use_real_data",
+        "max_real_rows",
+        "batch_size",
+        "epochs",
+        "verbose",
+        "validation_split",
+        "early_stopping_patience",
+        "reduce_lr_patience",
+        "reduce_lr_factor",
+        "min_lr",
+        "restore_best_weights",
+        "initial_learning_rate",
+        "optimizer",
+        "seed",
+        "target_metric",
+        "target_metric_mode",
+        "max_training_minutes",
+    }
+    filtered_recommended = {str(k): v for k, v in recommended.items() if str(k) in allowed}
+
+    return {
+        "decision": decision,
+        "reasoning_summary": str(payload.get("reasoning_summary", "")).strip(),
+        "expected_benefit": expected_benefit,
+        "expected_cost": expected_cost,
+        "confidence": confidence,
+        "recommended_training_config": filtered_recommended,
+        "success_criteria": {
+            "target_metric": str(success.get("target_metric", "val_loss")).strip() or "val_loss",
+            "target_metric_mode": str(success.get("target_metric_mode", "min")).strip().lower() or "min",
+            "min_relative_improvement": float(success.get("min_relative_improvement", 0.0) or 0.0),
+        },
+        "next_if_fail": str(payload.get("next_if_fail", "stop_and_try_new_variant")).strip() or "stop_and_try_new_variant",
+    }
+
+
 def _resolve_repo_path(file_path: str) -> Path:
     raw = Path(file_path)
     if raw.is_absolute():
@@ -381,3 +448,43 @@ def repair_model_definition_via_openai(
     prompt = _replace_prompt_placeholders(prompt_template, replacements)
 
     return generate_candidate_via_openai(api_key=api_key, model=model, prompt=prompt, endpoint=endpoint)
+
+
+def recommend_train_continue_via_openai(
+    *,
+    api_key: str,
+    model: str,
+    endpoint: str,
+    prompt_file: str,
+    model_overview: dict[str, Any],
+    parent_overview: dict[str, Any],
+    champion_overview: dict[str, Any],
+    model_comparison_summary: dict[str, Any],
+    training_history_summary: dict[str, Any],
+    family_history_summary: dict[str, Any],
+    current_training_config: dict[str, Any],
+    available_training_fields: dict[str, Any],
+) -> dict[str, Any]:
+    prompt_template = _read_text_if_exists(prompt_file)
+    if prompt_template.strip() == "":
+        prompt_template = (
+            "Return only JSON with keys decision, reasoning_summary, expected_benefit, expected_cost, confidence, "
+            "recommended_training_config, success_criteria, next_if_fail."
+        )
+
+    replacements = {
+        "model_overview_json": json.dumps(model_overview, ensure_ascii=False, indent=2),
+        "parent_overview_json": json.dumps(parent_overview, ensure_ascii=False, indent=2),
+        "champion_overview_json": json.dumps(champion_overview, ensure_ascii=False, indent=2),
+        "model_comparison_summary_json": json.dumps(model_comparison_summary, ensure_ascii=False, indent=2),
+        "training_history_summary_json": json.dumps(training_history_summary, ensure_ascii=False, indent=2),
+        "family_history_summary_json": json.dumps(family_history_summary, ensure_ascii=False, indent=2),
+        "current_training_config_json": json.dumps(current_training_config, ensure_ascii=False, indent=2),
+        "available_training_fields_json": json.dumps(available_training_fields, ensure_ascii=False, indent=2),
+    }
+    prompt = _replace_prompt_placeholders(prompt_template, replacements)
+    raw = generate_candidate_via_openai(api_key=api_key, model=model, prompt=prompt, endpoint=endpoint)
+    normalized = normalize_llm_training_recommendation(raw)
+    if not normalized:
+        raise LlmRequestError("LLM returned empty training recommendation", raw.get("_llm_trace", {}) if isinstance(raw, dict) else {})
+    return normalized

@@ -1,0 +1,152 @@
+Mode: TRAIN_CONTINUE_RECOMMENDATION
+
+Objectiu: decidir si val la pena continuar entrenant un model existent, aturar-lo o provar una nova variant, i proposar una configuracio de training realista.
+
+### Context
+model_overview:
+{{model_overview_json}}
+
+parent_overview:
+{{parent_overview_json}}
+
+champion_overview:
+{{champion_overview_json}}
+
+model_comparison_summary:
+{{model_comparison_summary_json}}
+
+training_history_summary:
+{{training_history_summary_json}}
+
+family_history_summary:
+{{family_history_summary_json}}
+
+current_training_config:
+{{current_training_config_json}}
+
+available_training_fields:
+{{available_training_fields_json}}
+
+### Objectiu de la decisio
+Decideix UNA de les opcions seguents:
+- `continue`
+- `stop`
+- `retry_variant`
+
+### Regles importants
+1. No proposis canvis radicals en mes de 2-3 camps alhora.
+2. No repeteixis exactament una configuracio ja provada si no hi ha una bona justificacio.
+3. Si `best_epoch` es molt a prop del final i encara hi ha senyal de millora, augmenta la probabilitat de `continue`.
+4. Si hi ha diverses reduccions de LR sense millora clara, augmenta la probabilitat de `stop`.
+5. Si el model es bo pero inestable, pots proposar `retry_variant`.
+6. Mantingues els valors dins limits raonables i compatibles amb training real.
+7. Considera sempre cost vs benefici esperat:
+   - si la millora esperada es petita i el cost alt -> prefereix `stop`
+   - si una nova variant pot aportar mes diversitat o un salt estructural -> prefereix `retry_variant`
+   - usa `continue` nomes si el guany esperat justifica clarament el cost
+8. Identifica la causa probable del limit actual del model:
+   - si sembla un limit de training/optimitzacio -> afavoreix `continue`
+   - si sembla un limit d'arquitectura o definicio -> afavoreix `retry_variant`
+9. Usa `family_history_summary` de forma activa:
+   - si les continuacions han funcionat en aquesta familia -> afavoreix `continue`
+   - si les continuacions no han millorat resultats -> afavoreix `retry_variant`
+10. Evita sobreexplotar el mateix model o familia:
+   - si ja hi ha hagut diverses continuacions sense millora clara -> prefereix `stop` o `retry_variant`
+11. Evita decisions trivials:
+   - no facis `continue` per defecte
+   - justifica sempre la decisio amb senyals concrets del training
+12. Si `decision = retry_variant`, indica clarament si el canvi recomanat hauria de ser sobretot de training, d'arquitectura o de dades.
+13. Usa `model_comparison_summary` per evitar deduccions implícites innecessàries sobre parent i champion.
+14. Usa `training_history_summary` per detectar senyals de corba (`best_epoch`, `improvement_last_epochs`, `lr_reductions`, `plateau_detected`).
+15. Usa els camps de cost (`training_time_minutes`, `dataset_size`, `compute_cost_estimate`) per estimar millor `expected_cost`.
+
+### Camps de sortida obligatoris
+Return ONLY one valid JSON object with exactly these top-level keys:
+- `decision`
+- `reasoning_summary`
+- `expected_benefit`
+- `expected_cost`
+- `confidence`
+- `recommended_training_config`
+- `success_criteria`
+- `next_if_fail`
+
+### Valors esperats
+- `decision`: `continue|stop|retry_variant`
+- `expected_benefit`: `low|medium|high`
+- `expected_cost`: `low|medium|high`
+- `confidence`: `low|medium|high`
+- `recommended_training_config`: objecte parcial o complet, nomes amb camps del trainer permesos
+- `success_criteria.target_metric`: una metrica coneguda (`val_loss`, `val_mae`, etc.)
+- `success_criteria.target_metric_mode`: `min|max`
+
+### Interpretacio recomanada
+- `expected_benefit=low`: millora marginal o molt incerta
+- `expected_benefit=medium`: millora plausible i util
+- `expected_benefit=high`: millora clara amb alta probabilitat
+- `expected_cost=low`: cost petit i assumible
+- `expected_cost=medium`: cost moderat
+- `expected_cost=high`: cost notable o dubtos en relacio amb el benefici
+- `confidence=low|medium|high`: confiança del model en la recomanacio final
+
+### Camps permesos dins `recommended_training_config`
+- `use_real_data`
+- `max_real_rows`
+- `batch_size`
+- `epochs`
+- `verbose`
+- `validation_split`
+- `early_stopping_patience`
+- `reduce_lr_patience`
+- `reduce_lr_factor`
+- `min_lr`
+- `restore_best_weights`
+- `initial_learning_rate`
+- `optimizer`
+- `seed`
+- `target_metric`
+- `target_metric_mode`
+- `max_training_minutes`
+
+### Auto-check abans de retornar
+Verifica internament:
+- JSON valid
+- `decision` dins valors permesos
+- `expected_benefit`, `expected_cost` i `confidence` dins valors permesos
+- `recommended_training_config` nomes amb camps permesos
+- `success_criteria` coherent
+- cap text fora del JSON
+
+### Exemple de sortida
+```json
+{
+  "decision": "continue",
+  "reasoning_summary": "The model is close to the champion and still shows room for improvement near the end of training.",
+  "expected_benefit": "medium",
+  "expected_cost": "medium",
+  "confidence": "medium",
+  "recommended_training_config": {
+    "epochs": 180,
+    "batch_size": 512,
+    "early_stopping_patience": 25,
+    "reduce_lr_patience": 10,
+    "reduce_lr_factor": 0.5,
+    "min_lr": 0.0000005,
+    "max_real_rows": 300000,
+    "validation_split": 0.15,
+    "restore_best_weights": true,
+    "initial_learning_rate": 0.0005,
+    "optimizer": "adam",
+    "target_metric": "val_loss",
+    "target_metric_mode": "min",
+    "max_training_minutes": 90,
+    "seed": 42
+  },
+  "success_criteria": {
+    "target_metric": "val_loss",
+    "target_metric_mode": "min",
+    "min_relative_improvement": 0.02
+  },
+  "next_if_fail": "stop_and_try_new_variant"
+}
+```

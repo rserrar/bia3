@@ -20,6 +20,7 @@ class Settings:
     llm_num_new_models: int
     llm_num_reference_models: int
     fix_error_prompt_file: str
+    train_continue_recommendation_prompt_file: str
     real_data_mode: bool
     data_dir: str
     max_real_rows: int
@@ -34,6 +35,12 @@ class Settings:
     train_reduce_lr_factor: float
     train_min_lr: float
     train_restore_best_weights: bool
+    train_initial_learning_rate: float
+    train_optimizer: str
+    train_seed: int
+    train_target_metric: str
+    train_target_metric_mode: str
+    train_max_training_minutes: int
     train_include_inline_artifacts: bool
     train_include_full_model_artifact: bool
     train_max_inline_artifact_mb: int
@@ -57,6 +64,7 @@ def load_settings() -> Settings:
         llm_num_new_models=int(os.getenv("V3_LLM_NUM_NEW_MODELS", "1")),
         llm_num_reference_models=int(os.getenv("V3_LLM_NUM_REFERENCE_MODELS", "3")),
         fix_error_prompt_file=os.getenv("V3_LLM_FIX_ERROR_PROMPT_FILE", "prompts/fix_model_error.txt"),
+        train_continue_recommendation_prompt_file=os.getenv("V3_LLM_TRAIN_CONTINUE_PROMPT_FILE", "prompts/recommend_train_continue.txt"),
         real_data_mode=os.getenv("V3_REAL_DATA_MODE", "false").lower() in {"1", "true", "yes"},
         data_dir=os.getenv("V3_DATA_DIR", "data"),
         max_real_rows=int(os.getenv("V3_MAX_REAL_ROWS", "4096")),
@@ -71,6 +79,12 @@ def load_settings() -> Settings:
         train_reduce_lr_factor=float(os.getenv("V3_TRAIN_REDUCE_LR_FACTOR", "0.5") or 0.5),
         train_min_lr=float(os.getenv("V3_TRAIN_MIN_LR", "0.000001") or 0.000001),
         train_restore_best_weights=os.getenv("V3_TRAIN_RESTORE_BEST_WEIGHTS", "true").lower() in {"1", "true", "yes"},
+        train_initial_learning_rate=float(os.getenv("V3_TRAIN_INITIAL_LEARNING_RATE", "0.001") or 0.001),
+        train_optimizer=os.getenv("V3_TRAIN_OPTIMIZER", "adam").strip() or "adam",
+        train_seed=int(os.getenv("V3_TRAIN_SEED", "42") or 42),
+        train_target_metric=os.getenv("V3_TRAIN_TARGET_METRIC", "val_loss").strip() or "val_loss",
+        train_target_metric_mode=os.getenv("V3_TRAIN_TARGET_METRIC_MODE", "min").strip().lower() or "min",
+        train_max_training_minutes=max(0, int(os.getenv("V3_TRAIN_MAX_TRAINING_MINUTES", "0") or 0)),
         train_include_inline_artifacts=os.getenv("V3_TRAIN_INCLUDE_INLINE_ARTIFACTS", "true").lower() in {"1", "true", "yes"},
         train_include_full_model_artifact=os.getenv("V3_TRAIN_INCLUDE_FULL_MODEL_ARTIFACT", "true").lower() in {"1", "true", "yes"},
         train_max_inline_artifact_mb=max(16, int(os.getenv("V3_TRAIN_MAX_INLINE_ARTIFACT_MB", "256") or 256)),
