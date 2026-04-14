@@ -1176,6 +1176,8 @@ def _set_global_seeds(seed: int) -> None:
 
 def _resolve_monitor_metric(target_metric: str, validation_split: float) -> str:
     metric = str(target_metric or "val_loss").strip() or "val_loss"
+    if metric == "early_stop_score":
+        return "val_early_stop_score" if float(validation_split) > 0.0 else "early_stop_score"
     has_validation = float(validation_split) > 0.0
     if has_validation and not metric.startswith("val_"):
         return f"val_{metric}"
@@ -1187,6 +1189,30 @@ def _resolve_monitor_metric(target_metric: str, validation_split: float) -> str:
 def _encode_file_base64(path: str) -> str:
     with open(path, "rb") as handle:
         return base64.b64encode(handle.read()).decode("ascii")
+
+
+def _business_metric_log_keys(model_definition_full: dict[str, Any], validation_split: float) -> dict[str, str]:
+    architecture = _as_dict(model_definition_full.get("architecture_definition"))
+    output_heads = _as_list_of_dicts(architecture.get("output_heads"))
+    has_validation = float(validation_split) > 0.0
+    prefix = "val_" if has_validation else ""
+    sl_key = ""
+    tb_key = ""
+    for head in output_heads:
+        layer_name = str(head.get("output_layer_name", "")).strip()
+        target_name = str(head.get("maps_to_target_config_name", "")).strip().lower()
+        if layer_name == "":
+            continue
+        metric_key = f"{prefix}{layer_name}_mae"
+        if target_name == "stop_loss_prediction":
+            sl_key = metric_key
+        if target_name == "take_profit_prediction":
+            tb_key = metric_key
+    return {
+        "sl": sl_key,
+        "tb": tb_key,
+        "score": f"{prefix}early_stop_score",
+    }
 
 
 def run_smoke_fit_real_data(
@@ -1285,6 +1311,11 @@ def run_full_fit_real_data(
     target_metric: str = "val_loss",
     target_metric_mode: str = "min",
     max_training_minutes: int = 0,
+    business_metric_sl_weight: float = 0.5,
+    business_metric_tb_weight: float = 0.5,
+    business_min_relative_improvement: float = 0.002,
+    business_improvement_window: int = 10,
+    soft_max_epochs: int = 120,
     cache_dtype: str = "float32",
     use_memmap_cache: bool = True,
     include_inline_artifacts: bool = True,
@@ -1339,6 +1370,12 @@ def run_full_fit_real_data(
     monitor_metric = _resolve_monitor_metric(target_metric, resolved_validation_split)
     monitor_mode = "max" if str(target_metric_mode).strip().lower() == "max" else "min"
     callback_verbose: Literal[0, 1] = 1 if max(0, int(verbose)) > 0 else 0
+    business_keys = _business_metric_log_keys(model_definition_full, resolved_validation_split)
+    business_monitor_enabled = monitor_metric == business_keys["score"]
+    if business_monitor_enabled and (business_keys["sl"] == "" or business_keys["tb"] == ""):
+        monitor_metric = _resolve_monitor_metric("val_loss", resolved_validation_split)
+        business_monitor_enabled = False
+
     class _ProgressCallback(tf.keras.callbacks.Callback):
         def on_epoch_end(self, epoch: int, logs: Any = None) -> None:
             if progress_callback is None:
@@ -1356,7 +1393,71 @@ def run_full_fit_real_data(
                     payload["mae"] = float(logs.get("mae") or 0.0)
                 if "val_mae" in logs:
                     payload["val_mae"] = float(logs.get("val_mae") or 0.0)
+                if business_keys["score"] in logs:
+                    payload["early_stop_score"] = float(logs.get(business_keys["score"]) or 0.0)
+                if business_keys["sl"] and business_keys["sl"] in logs:
+                    payload["sl_error"] = float(logs.get(business_keys["sl"]) or 0.0)
+                if business_keys["tb"] and business_keys["tb"] in logs:
+                    payload["tb_error"] = float(logs.get(business_keys["tb"]) or 0.0)
             progress_callback(payload)
+
+    class _BusinessMetricCallback(tf.keras.callbacks.Callback):
+        def on_epoch_end(self, epoch: int, logs: Any = None) -> None:
+            if not isinstance(logs, dict):
+                return
+            sl_key = business_keys["sl"]
+            tb_key = business_keys["tb"]
+            if sl_key == "" or tb_key == "":
+                return
+            sl_value = logs.get(sl_key)
+            tb_value = logs.get(tb_key)
+            if sl_value is None or tb_value is None:
+                return
+            sl_weight = max(0.0, float(business_metric_sl_weight))
+            tb_weight = max(0.0, float(business_metric_tb_weight))
+            denom = sl_weight + tb_weight
+            if denom <= 0.0:
+                sl_weight = 0.5
+                tb_weight = 0.5
+                denom = 1.0
+            score = ((sl_weight * float(sl_value)) + (tb_weight * float(tb_value))) / denom
+            logs[business_keys["score"]] = float(score)
+
+    class _BusinessGuardCallback(tf.keras.callbacks.Callback):
+        def __init__(self) -> None:
+            super().__init__()
+            self.window = max(2, int(business_improvement_window))
+            self.min_relative_improvement = max(0.0, float(business_min_relative_improvement))
+            self.soft_cap_epochs = max(0, int(soft_max_epochs))
+            self.history: list[float] = []
+
+        def on_epoch_end(self, epoch: int, logs: Any = None) -> None:
+            if not business_monitor_enabled or not isinstance(logs, dict):
+                return
+            score = logs.get(business_keys["score"])
+            if score is None:
+                return
+            current = float(score)
+            self.history.append(current)
+            epoch_num = int(epoch) + 1
+            if len(self.history) >= self.window:
+                window_values = self.history[-self.window:]
+                oldest = float(window_values[0])
+                best = float(min(window_values))
+                baseline = max(abs(oldest), 1e-8)
+                relative_improvement = (oldest - best) / baseline
+                if relative_improvement < self.min_relative_improvement:
+                    self.model.stop_training = True
+                    logs["business_guard_stop_reason"] = "stalled_business_metric"
+                    return
+            if self.soft_cap_epochs > 0 and epoch_num >= self.soft_cap_epochs:
+                best_so_far = min(self.history)
+                baseline = max(abs(current), 1e-8)
+                relative_to_best = (current - best_so_far) / baseline if baseline > 0 else 0.0
+                if relative_to_best <= self.min_relative_improvement:
+                    self.model.stop_training = True
+                    logs["business_guard_stop_reason"] = "soft_epoch_cap"
+                    return
 
     class _TimeBudgetCallback(tf.keras.callbacks.Callback):
         def __init__(self, budget_minutes: int) -> None:
@@ -1371,6 +1472,8 @@ def run_full_fit_real_data(
                 self.model.stop_training = True
 
     callbacks = [
+        _BusinessMetricCallback(),
+        _BusinessGuardCallback(),
         tf.keras.callbacks.EarlyStopping(
             monitor=monitor_metric,
             mode=monitor_mode,
@@ -1385,6 +1488,13 @@ def run_full_fit_real_data(
             patience=max(1, int(reduce_lr_patience)),
             min_lr=max(0.0, float(min_lr)),
             verbose=callback_verbose,
+        ),
+        tf.keras.callbacks.EarlyStopping(
+            monitor=_resolve_monitor_metric("val_loss", resolved_validation_split),
+            mode="min",
+            patience=max(max(1, int(early_stopping_patience)), 15),
+            restore_best_weights=bool(restore_best_weights),
+            verbose=0,
         ),
         _ProgressCallback(),
         _TimeBudgetCallback(max_training_minutes),
@@ -1406,13 +1516,14 @@ def run_full_fit_real_data(
     val_loss_curve = [float(v) for v in history_data.get("val_loss", []) if v is not None]
     monitor_curve = [float(v) for v in history_data.get(monitor_metric, []) if v is not None]
     epochs_ran = len(loss_curve) if loss_curve else max(1, int(epochs))
+    best_target_metric_epoch = 1
     if monitor_curve:
         monitor_arr = np.array(monitor_curve)
         if monitor_mode == "max":
-            best_epoch = int(np.argmax(monitor_arr)) + 1
+            best_target_metric_epoch = int(np.argmax(monitor_arr)) + 1
             best_target_metric = float(np.max(monitor_arr))
         else:
-            best_epoch = int(np.argmin(monitor_arr)) + 1
+            best_target_metric_epoch = int(np.argmin(monitor_arr)) + 1
             best_target_metric = float(np.min(monitor_arr))
     else:
         best_target_metric = 0.0
@@ -1424,7 +1535,7 @@ def run_full_fit_real_data(
         best_epoch = int(np.argmin(np.array(loss_curve))) + 1
         best_val_loss = float(np.min(np.array(loss_curve)))
     else:
-        best_epoch = 1
+        best_epoch = best_target_metric_epoch
         best_val_loss = 0.0
 
     final_loss = float(loss_curve[-1]) if loss_curve else 0.0
@@ -1527,7 +1638,8 @@ def run_full_fit_real_data(
         "target_metric_mode": monitor_mode,
         "target_metric_value": best_target_metric,
         "epochs_ran": epochs_ran,
-        "best_epoch": best_epoch,
+        "best_epoch": best_target_metric_epoch if business_monitor_enabled else best_epoch,
+        "best_val_loss_epoch": best_epoch,
         "best_val_loss": best_val_loss,
         "samples": n,
         "history": history_data,
