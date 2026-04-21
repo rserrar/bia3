@@ -103,12 +103,24 @@ def run_worker_loop() -> None:
             client.heartbeat(task_id, {"worker_id": settings.worker_id, "progress": {"phase": "started"}})
 
             stop_heartbeat = threading.Event()
+            max_lease_lost_heartbeat_errors = 3
 
             def _heartbeat_loop() -> None:
+                lease_lost_errors = 0
                 while not stop_heartbeat.wait(settings.worker_heartbeat_seconds):
                     try:
                         client.heartbeat(task_id, {"worker_id": settings.worker_id})
+                        lease_lost_errors = 0
                     except Exception as hb_error:
+                        message = str(hb_error)
+                        if "leased by another worker" in message:
+                            lease_lost_errors += 1
+                            if lease_lost_errors >= max_lease_lost_heartbeat_errors:
+                                print(
+                                    f"[WARN] Heartbeat stopped task_id={task_id}: lease lost ({lease_lost_errors} consecutive errors)",
+                                    flush=True,
+                                )
+                                break
                         print(f"[WARN] Heartbeat failed task_id={task_id}: {hb_error}", flush=True)
 
             hb_thread = threading.Thread(target=_heartbeat_loop, daemon=True)
