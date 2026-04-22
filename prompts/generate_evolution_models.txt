@@ -1,6 +1,7 @@
 Mode: EVOLUTION
 
 Objectiu: millorar el parent model amb canvis petits o mitjans, hipòtesi clara i memòria explícita del que ja s'ha provat a la família.
+EVOLUTION ha de prioritzar explotació de línies prometedores i millora competitiva incremental.
 
 ### Context
 num_new_models={{num_new_models}}
@@ -28,11 +29,12 @@ available_outputs_description:
 
 ### Regles principals
 1. El parent model és la base: no redisseny total.
-2. Canvis incrementals, justificats i fàcils d'atribuir.
-3. Evita repetir patrons de la família sense variació real.
-4. Explica clarament què canvies respecte al parent, què vols provar i quines serien les següents variants.
+2. Canvis incrementals, justificats i fàcils d'atribuir; màxim 1 canvi estructural menor i 1-2 refinaments.
+3. Evita repetir patrons de la família sense variació real, especialment si el context mostra saturació sense breakthrough.
+4. Explica clarament què canvies respecte al parent, quin mecanisme concret hauria de reduir gap vs champion/top family, i quines serien les següents variants.
 5. Prioritza estabilitat build/compile/smoke-fit.
-6. Si dubtes, simplifica.
+6. Si dubtes d'schema o consistència, simplifica; si dubtes de competitivitat, escull el refinament amb més potencial explicable.
+7. Si una proposta implica salt arquitectònic fort, NO és evolution: reconduir-la a mutació incremental.
 
 ### Camps obligatoris de context experimental
 Has de retornar aquests camps dins `model_definition_full`:
@@ -49,7 +51,7 @@ Has de retornar aquests camps dins `model_definition_full`:
 ### Contingut obligatori dels camps de text
 - `description`: resum curt de la mutació respecte al parent.
 - `change_log`: llista de canvis específics respecte al parent o millor fill de referència.
-- `llm_reasoning`: quina hipòtesi vols comprovar, què esperes millorar i per què la mutació és coherent amb la història de la família.
+- `llm_reasoning`: quina hipòtesi vols comprovar, què esperes millorar, mecanisme competitiu esperat (gap champion/top family) i per què la mutació és coherent amb la història de la família.
 - `potential_next_variations`: 2-4 següents mutacions lògiques si aquest experiment funciona o falla parcialment.
 
 ### model_definition_summary obligatori
@@ -64,6 +66,7 @@ Has de retornar aquests camps dins `model_definition_full`:
 - `what_changed`
 - `experiment_goal`
 - `next_variations`
+- `competitiveness_hypothesis`
 
 ### Instrucció especial d'evolució
 Fes servir el `parent_model`, els `family_models`, `family_metrics_summary` i `genealogy_case_studies` per evitar repeticions.
@@ -152,6 +155,8 @@ Verifica internament:
 - capes suportades
 - que el JSON parseja correctament en un parser JSON estàndard
 - que no hi ha claus legacy prohibides
+- que la mutació és realment incremental (no redisseny fort)
+- que la proposta justifica explícitament com intenta reduir gap amb champion/top family
 
 ### Sortida (OBLIGATÒRIA)
 Return ONLY one valid JSON object. Do not include any extra text.
@@ -180,7 +185,8 @@ Before returning, validate that the response is valid JSON and parseable.
     "change_strategy": "...",
     "what_changed": "...",
     "experiment_goal": "...",
-    "next_variations": ["...", "..."]
+    "next_variations": ["...", "..."],
+    "competitiveness_hypothesis": "..."
   }
 }
 ```
