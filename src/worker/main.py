@@ -1,6 +1,9 @@
 import time
 import threading
 import multiprocessing as mp
+import tempfile
+import os
+import json
 from uuid import uuid4
 from typing import Any, cast
 
@@ -39,20 +42,35 @@ def execute_task(task: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _execute_task_in_subprocess(task: dict[str, Any], result_queue: Any) -> None:
+def _execute_task_in_subprocess(task: dict[str, Any], result_file_path: str) -> None:
+    payload: dict[str, Any]
     try:
-        result_queue.put({"ok": True, "result": execute_task(task)})
+        payload = {"ok": True, "result": execute_task(task)}
     except Exception as error:
-        result_queue.put(
-            {
-                "ok": False,
-                "error": {
-                    "error_type": "worker_subprocess_exception",
-                    "error_message": str(error),
-                    "retryable": True,
-                },
-            }
-        )
+        payload = {
+            "ok": False,
+            "error": {
+                "error_type": "worker_subprocess_exception",
+                "error_message": str(error),
+                "retryable": True,
+            },
+        }
+
+    try:
+        with open(result_file_path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle)
+    except Exception:
+        pass
+
+
+def _is_missing_real_data_failure(result: dict[str, Any]) -> bool:
+    if str(result.get("status", "")).lower() != "failed":
+        return False
+    error = result.get("error")
+    if not isinstance(error, dict):
+        return False
+    message = str(error.get("error_message", "")).lower()
+    return "missing real input data for feature:" in message
 
 
 def run_worker_loop() -> None:
@@ -153,8 +171,10 @@ def run_worker_loop() -> None:
                 },
             }
             lease_lost_abort = False
-            result_queue: Any = mp.Queue(maxsize=1)
-            task_process = mp.Process(target=_execute_task_in_subprocess, args=(task, result_queue), daemon=True)
+            result_file = tempfile.NamedTemporaryFile(prefix="v3-worker-result-", suffix=".json", delete=False)
+            result_file_path = result_file.name
+            result_file.close()
+            task_process = mp.Process(target=_execute_task_in_subprocess, args=(task, result_file_path), daemon=True)
             task_process.start()
 
             try:
@@ -172,28 +192,37 @@ def run_worker_loop() -> None:
                     continue
 
                 task_process.join(timeout=2.0)
-                if not result_queue.empty():
-                    subprocess_result = result_queue.get_nowait()
-                    if bool(subprocess_result.get("ok", False)):
-                        raw_result = subprocess_result.get("result")
-                        if isinstance(raw_result, dict):
-                            result = raw_result
-                    else:
-                        raw_error = subprocess_result.get("error")
-                        error_payload = raw_error if isinstance(raw_error, dict) else {
-                            "error_type": "worker_subprocess_exception",
-                            "error_message": "worker subprocess failed",
-                            "retryable": True,
-                        }
-                        result = {
-                            "status": "failed",
-                            "error": error_payload,
-                        }
+                subprocess_result: dict[str, Any] = {}
+                try:
+                    if os.path.isfile(result_file_path):
+                        with open(result_file_path, "r", encoding="utf-8") as handle:
+                            loaded = json.load(handle)
+                            if isinstance(loaded, dict):
+                                subprocess_result = loaded
+                except Exception:
+                    subprocess_result = {}
+
+                if bool(subprocess_result.get("ok", False)):
+                    raw_result = subprocess_result.get("result")
+                    if isinstance(raw_result, dict):
+                        result = raw_result
+                else:
+                    raw_error = subprocess_result.get("error")
+                    error_payload = raw_error if isinstance(raw_error, dict) else {
+                        "error_type": "worker_subprocess_exception",
+                        "error_message": "worker subprocess failed",
+                        "retryable": True,
+                    }
+                    result = {
+                        "status": "failed",
+                        "error": error_payload,
+                    }
             finally:
                 stop_heartbeat.set()
                 hb_thread.join(timeout=2.0)
                 try:
-                    result_queue.close()
+                    if os.path.isfile(result_file_path):
+                        os.remove(result_file_path)
                 except Exception:
                     pass
 
@@ -215,6 +244,12 @@ def run_worker_loop() -> None:
                     },
                 )
                 print(f"[WARN] Task failed {task_id} ({task_type})", flush=True)
+                if _is_missing_real_data_failure(result):
+                    print(
+                        f"[ERROR] Missing real training data detected on task_id={task_id}; stopping worker loop to avoid repeated bad claims",
+                        flush=True,
+                    )
+                    break
             else:
                 print(f"[INFO] Sending complete -> server task_id={task_id}", flush=True)
                 client.complete(
