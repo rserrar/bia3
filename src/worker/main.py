@@ -1,5 +1,6 @@
 import time
 import threading
+import multiprocessing as mp
 from uuid import uuid4
 from typing import Any, cast
 
@@ -9,7 +10,6 @@ from .executors.train import execute_train_model
 from .executors.train_continue import execute_train_continue
 from .executors.recommend_train_continue import execute_recommend_train_continue
 from .client import WorkerApiClient
-from .progress import set_reporter, clear_reporter
 from src.shared.settings import load_settings
 
 
@@ -37,6 +37,22 @@ def execute_task(task: dict[str, Any]) -> dict[str, Any]:
             "retryable": False,
         },
     }
+
+
+def _execute_task_in_subprocess(task: dict[str, Any], result_queue: Any) -> None:
+    try:
+        result_queue.put({"ok": True, "result": execute_task(task)})
+    except Exception as error:
+        result_queue.put(
+            {
+                "ok": False,
+                "error": {
+                    "error_type": "worker_subprocess_exception",
+                    "error_message": str(error),
+                    "retryable": True,
+                },
+            }
+        )
 
 
 def run_worker_loop() -> None:
@@ -104,12 +120,13 @@ def run_worker_loop() -> None:
 
             stop_heartbeat = threading.Event()
             max_lease_lost_heartbeat_errors = 3
+            lease_lost_event = threading.Event()
 
             def _heartbeat_loop() -> None:
                 lease_lost_errors = 0
                 while not stop_heartbeat.wait(settings.worker_heartbeat_seconds):
                     try:
-                        client.heartbeat(task_id, {"worker_id": settings.worker_id})
+                        client.heartbeat(task_id, {"worker_id": settings.worker_id, "progress": {"phase": "heartbeat"}})
                         lease_lost_errors = 0
                     except Exception as hb_error:
                         message = str(hb_error)
@@ -120,22 +137,65 @@ def run_worker_loop() -> None:
                                     f"[WARN] Heartbeat stopped task_id={task_id}: lease lost ({lease_lost_errors} consecutive errors)",
                                     flush=True,
                                 )
+                                lease_lost_event.set()
                                 break
                         print(f"[WARN] Heartbeat failed task_id={task_id}: {hb_error}", flush=True)
 
             hb_thread = threading.Thread(target=_heartbeat_loop, daemon=True)
             hb_thread.start()
 
-            def _report(progress: dict[str, Any]) -> None:
-                client.progress(task_id, {"worker_id": settings.worker_id, "progress": progress})
+            result: dict[str, Any] = {
+                "status": "failed",
+                "error": {
+                    "error_type": "worker_result_missing",
+                    "error_message": "worker subprocess returned no result",
+                    "retryable": True,
+                },
+            }
+            lease_lost_abort = False
+            result_queue: Any = mp.Queue(maxsize=1)
+            task_process = mp.Process(target=_execute_task_in_subprocess, args=(task, result_queue), daemon=True)
+            task_process.start()
 
-            set_reporter(_report)
             try:
-                result = execute_task(task)
+                while task_process.is_alive():
+                    if lease_lost_event.is_set():
+                        lease_lost_abort = True
+                        break
+                    time.sleep(0.5)
+
+                if lease_lost_abort:
+                    if task_process.is_alive():
+                        task_process.terminate()
+                        task_process.join(timeout=5.0)
+                    print(f"[WARN] Aborting task_id={task_id} locally after lease loss", flush=True)
+                    continue
+
+                task_process.join(timeout=2.0)
+                if not result_queue.empty():
+                    subprocess_result = result_queue.get_nowait()
+                    if bool(subprocess_result.get("ok", False)):
+                        raw_result = subprocess_result.get("result")
+                        if isinstance(raw_result, dict):
+                            result = raw_result
+                    else:
+                        raw_error = subprocess_result.get("error")
+                        error_payload = raw_error if isinstance(raw_error, dict) else {
+                            "error_type": "worker_subprocess_exception",
+                            "error_message": "worker subprocess failed",
+                            "retryable": True,
+                        }
+                        result = {
+                            "status": "failed",
+                            "error": error_payload,
+                        }
             finally:
-                clear_reporter()
                 stop_heartbeat.set()
                 hb_thread.join(timeout=2.0)
+                try:
+                    result_queue.close()
+                except Exception:
+                    pass
 
             idem_key = f"{task_id}:{attempt}:{uuid4().hex[:8]}"
             if str(result.get("status", "completed")) == "failed":
