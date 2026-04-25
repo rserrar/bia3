@@ -925,13 +925,28 @@ def build_keras_model(
     return model, list(input_layers.keys()), list(model.output_names)
 
 
-def _sanitize_real_array(arr: np.ndarray, label: str, target_dtype: str | None = "float32") -> np.ndarray:
+_NON_FINITE_WARNED_LABELS: set[str] = set()
+
+
+def _sanitize_real_array(
+    arr: np.ndarray,
+    label: str,
+    target_dtype: str | None = "float32",
+    *,
+    warn_once: bool = True,
+) -> np.ndarray:
     if target_dtype in {"float16", "float32"}:
         out = arr.astype(target_dtype, copy=False)
     else:
         out = arr
-    if not np.isfinite(out).all():
-        print(f"[WARN] Non-finite values detected in {label}; sanitizing", flush=True)
+    finite_mask = np.isfinite(out)
+    if not finite_mask.all():
+        bad_count = int(finite_mask.size - int(finite_mask.sum()))
+        should_warn = (not warn_once) or (label not in _NON_FINITE_WARNED_LABELS)
+        if should_warn:
+            print(f"[WARN] Non-finite values detected in {label}; sanitizing ({bad_count} values)", flush=True)
+            if warn_once:
+                _NON_FINITE_WARNED_LABELS.add(label)
         if np.issubdtype(out.dtype, np.floating):
             finfo = np.finfo(out.dtype)
             clip = min(1e6, float(finfo.max) * 0.95)
@@ -939,6 +954,113 @@ def _sanitize_real_array(arr: np.ndarray, label: str, target_dtype: str | None =
         else:
             out = np.nan_to_num(out, nan=0.0, posinf=1e6, neginf=-1e6)
     return out
+
+
+def _format_row_preview(values: np.ndarray, max_cols: int) -> str:
+    flat = np.asarray(values).reshape(-1)
+    preview = flat[: max(1, int(max_cols))]
+    return np.array2string(preview, precision=6, separator=", ", threshold=max(1, int(max_cols)))
+
+
+def _first_non_finite_details(arr: np.ndarray, sample_cols: int, sample_rows: int) -> dict[str, Any] | None:
+    try:
+        finite_mask = np.isfinite(arr)
+    except Exception:
+        return None
+    if bool(finite_mask.all()):
+        return None
+
+    bad_total = int(finite_mask.size - int(finite_mask.sum()))
+    bad_positions = np.argwhere(~finite_mask)
+    if bad_positions.size == 0:
+        return None
+
+    first = bad_positions[0]
+    if arr.ndim <= 1:
+        bad_row = int(first[0])
+        bad_col = 0
+    else:
+        bad_row = int(first[0])
+        bad_col = int(first[1])
+
+    if arr.ndim <= 1:
+        row_values = np.asarray([arr[bad_row]])
+    else:
+        row_values = np.asarray(arr[bad_row])
+
+    half = max(0, int(sample_rows) // 2)
+    start = max(0, bad_row - half)
+    end = min(int(arr.shape[0]), start + max(1, int(sample_rows)))
+    sample_row_previews: list[str] = []
+    for row_idx in range(start, end):
+        if arr.ndim <= 1:
+            row_preview = np.asarray([arr[row_idx]])
+        else:
+            row_preview = np.asarray(arr[row_idx])
+        sample_row_previews.append(f"r{row_idx}:{_format_row_preview(row_preview, sample_cols)}")
+
+    return {
+        "bad_total" : bad_total,
+        "bad_row": bad_row,
+        "bad_col": bad_col,
+        "first_row_preview": _format_row_preview(row_values, sample_cols),
+        "sample_rows": sample_row_previews,
+    }
+
+
+def _validate_non_finite_sources(
+    raw: dict[str, np.ndarray],
+    data_paths: dict[str, str],
+    base_data_dir: str,
+    *,
+    fail_on_non_finite: bool,
+    sample_cols: int,
+    sample_rows: int,
+) -> None:
+    for source_key, arr in raw.items():
+        if not isinstance(arr, np.ndarray) or arr.size == 0:
+            continue
+        details = _first_non_finite_details(arr, sample_cols=sample_cols, sample_rows=sample_rows)
+        if details is None:
+            continue
+
+        file_name = str(data_paths.get(source_key, "")).strip()
+        file_path = os.path.join(base_data_dir, file_name) if file_name else ""
+        location = file_path if file_path else file_name if file_name else source_key
+        message = (
+            f"non-finite source data detected key={source_key} file={location} "
+            f"first_bad=(row={details['bad_row']}, col={details['bad_col']}) "
+            f"bad_total={details['bad_total']} first_cols={details['first_row_preview']} "
+            f"neighbor_rows={' | '.join(details['sample_rows'])}"
+        )
+        if fail_on_non_finite:
+            raise RuntimeError(message)
+        print(f"[WARN] {message}", flush=True)
+
+
+def _validate_non_finite_model_arrays(
+    arrays: dict[str, np.ndarray],
+    *,
+    kind: str,
+    fail_on_non_finite: bool,
+    sample_cols: int,
+    sample_rows: int,
+) -> None:
+    for name, arr in arrays.items():
+        if not isinstance(arr, np.ndarray) or arr.size == 0:
+            continue
+        details = _first_non_finite_details(arr, sample_cols=sample_cols, sample_rows=sample_rows)
+        if details is None:
+            continue
+        message = (
+            f"non-finite model {kind} detected name={name} "
+            f"first_bad=(row={details['bad_row']}, col={details['bad_col']}) "
+            f"bad_total={details['bad_total']} first_cols={details['first_row_preview']} "
+            f"neighbor_rows={' | '.join(details['sample_rows'])}"
+        )
+        if fail_on_non_finite:
+            raise RuntimeError(message)
+        print(f"[WARN] {message}", flush=True)
 
 
 def run_smoke_fit(model_definition_full: dict[str, Any], smoke_batches: int = 3, feature_dim: int = 16, batch_size: int = 8) -> dict[str, Any]:
@@ -1013,6 +1135,9 @@ def _prepare_real_fit_context(
     max_rows: int,
     cache_dtype: str,
     use_memmap_cache: bool,
+    fail_on_non_finite: bool,
+    non_finite_sample_cols: int,
+    non_finite_sample_rows: int,
 ) -> tuple[Any, dict[str, np.ndarray], dict[str, np.ndarray], int]:
     exp = load_experiment_config(experiment_config_file)
     input_cfg_value = exp.get("input_features_config", [])
@@ -1032,6 +1157,14 @@ def _prepare_real_fit_context(
         base_data_dir=base_data_dir,
         cache_dtype=cache_dtype,
         use_memmap_cache=use_memmap_cache,
+    )
+    _validate_non_finite_sources(
+        raw,
+        data_paths,
+        base_data_dir,
+        fail_on_non_finite=fail_on_non_finite,
+        sample_cols=non_finite_sample_cols,
+        sample_rows=non_finite_sample_rows,
     )
     all_data = derive_additional_features_and_targets(raw, input_cfg, output_cfg)
 
@@ -1138,6 +1271,21 @@ def _prepare_real_fit_context(
     if not y_map:
         raise RuntimeError("no real targets found for output_heads")
 
+    _validate_non_finite_model_arrays(
+        x_data,
+        kind="input",
+        fail_on_non_finite=fail_on_non_finite,
+        sample_cols=non_finite_sample_cols,
+        sample_rows=non_finite_sample_rows,
+    )
+    _validate_non_finite_model_arrays(
+        y_map,
+        kind="target",
+        fail_on_non_finite=fail_on_non_finite,
+        sample_cols=non_finite_sample_cols,
+        sample_rows=non_finite_sample_rows,
+    )
+
     lengths = [arr.shape[0] for arr in list(x_data.values()) + list(y_map.values()) if isinstance(arr, np.ndarray) and arr.ndim >= 2]
     if not lengths:
         raise RuntimeError("real data arrays are empty")
@@ -1224,6 +1372,9 @@ def run_smoke_fit_real_data(
     batch_size: int = 16,
     cache_dtype: str = "float32",
     use_memmap_cache: bool = True,
+    fail_on_non_finite: bool = False,
+    non_finite_sample_cols: int = 12,
+    non_finite_sample_rows: int = 3,
 ) -> dict[str, Any]:
     tf = _tf()
     model, x_data, y_map, n = _prepare_real_fit_context(
@@ -1233,6 +1384,9 @@ def run_smoke_fit_real_data(
         max_rows=max_rows,
         cache_dtype=cache_dtype,
         use_memmap_cache=use_memmap_cache,
+        fail_on_non_finite=fail_on_non_finite,
+        non_finite_sample_cols=non_finite_sample_cols,
+        non_finite_sample_rows=non_finite_sample_rows,
     )
 
     batch = max(1, int(batch_size))
@@ -1241,32 +1395,38 @@ def run_smoke_fit_real_data(
     else:
         fit_dtype = "float32"
 
+    x_fit = {
+        name: _sanitize_real_array(arr[:n], f"input:{name}", target_dtype=fit_dtype)
+        for name, arr in x_data.items()
+    }
+    if len(model.outputs) == 1:
+        only_output = model.output_names[0]
+        if only_output in y_map:
+            y_fit: Any = _sanitize_real_array(y_map[only_output][:n], f"target:{only_output}", target_dtype=fit_dtype)
+        else:
+            first_name, first_arr = next(iter(y_map.items()))
+            y_fit = _sanitize_real_array(first_arr[:n], f"target:{first_name}", target_dtype=fit_dtype)
+    else:
+        y_fit = {
+            name: _sanitize_real_array(y_map[name][:n], f"target:{name}", target_dtype=fit_dtype)
+            for name in model.output_names
+            if name in y_map
+        }
+        if len(y_fit) != len(model.output_names):
+            missing = [name for name in model.output_names if name not in y_fit]
+            raise RuntimeError(f"missing real target data for output heads: {', '.join(missing)}")
+
     loss_values: list[float] = []
     mae_values: list[float] = []
 
     for start in range(0, n, batch):
         end = min(n, start + batch)
-        x_batch = {
-            name: _sanitize_real_array(arr[start:end], f"input:{name}", target_dtype=fit_dtype)
-            for name, arr in x_data.items()
-        }
+        x_batch = {name: arr[start:end] for name, arr in x_fit.items()}
 
         if len(model.outputs) == 1:
-            only_output = model.output_names[0]
-            if only_output in y_map:
-                y_batch: Any = _sanitize_real_array(y_map[only_output][start:end], f"target:{only_output}", target_dtype=fit_dtype)
-            else:
-                first_name, first_arr = next(iter(y_map.items()))
-                y_batch = _sanitize_real_array(first_arr[start:end], f"target:{first_name}", target_dtype=fit_dtype)
+            y_batch = y_fit[start:end]
         else:
-            y_batch = {
-                name: _sanitize_real_array(y_map[name][start:end], f"target:{name}", target_dtype=fit_dtype)
-                for name in model.output_names
-                if name in y_map
-            }
-            if len(y_batch) != len(model.output_names):
-                missing = [name for name in model.output_names if name not in y_batch]
-                raise RuntimeError(f"missing real target data for output heads: {', '.join(missing)}")
+            y_batch = {name: arr[start:end] for name, arr in y_fit.items()}
 
         metrics_batch = model.train_on_batch(x_batch, y_batch, return_dict=True)
         if isinstance(metrics_batch, dict):
@@ -1321,6 +1481,9 @@ def run_full_fit_real_data(
     include_inline_artifacts: bool = True,
     include_full_model_artifact: bool = False,
     max_inline_artifact_mb: int = 32,
+    fail_on_non_finite: bool = False,
+    non_finite_sample_cols: int = 12,
+    non_finite_sample_rows: int = 3,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     tf = _tf()
@@ -1332,6 +1495,9 @@ def run_full_fit_real_data(
         max_rows=max_rows,
         cache_dtype=cache_dtype,
         use_memmap_cache=use_memmap_cache,
+        fail_on_non_finite=fail_on_non_finite,
+        non_finite_sample_cols=non_finite_sample_cols,
+        non_finite_sample_rows=non_finite_sample_rows,
     )
     _compile_model(
         tf,

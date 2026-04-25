@@ -270,15 +270,22 @@ def _run_runtime_validation(payload: dict[str, Any], model_definition_full: dict
     use_real_data = bool(payload.get("use_real_data", settings.real_data_mode))
     if not use_real_data:
         raise RuntimeError("validate_candidate requires real data mode (set V3_REAL_DATA_MODE=true)")
+    requested_rows = int(payload.get("max_real_rows", settings.max_real_rows) or settings.max_real_rows)
+    smoke_rows = min(max(128, requested_rows), int(settings.validate_smoke_max_rows))
     smoke_result = run_smoke_fit_real_data(
         model_definition_full=model_definition_full,
         experiment_config_file=settings.experiment_config_file,
         base_data_dir=settings.data_dir,
-        max_rows=int(payload.get("max_real_rows", settings.max_real_rows) or settings.max_real_rows),
+        max_rows=smoke_rows,
         batch_size=int(payload.get("batch_size", 8) or 8),
         cache_dtype=settings.data_cache_dtype,
         use_memmap_cache=settings.use_memmap_cache,
+        fail_on_non_finite=settings.fail_on_non_finite,
+        non_finite_sample_cols=settings.non_finite_sample_cols,
+        non_finite_sample_rows=settings.non_finite_sample_rows,
     )
+    smoke_result["max_rows_requested"] = requested_rows
+    smoke_result["max_rows_used"] = smoke_rows
     return smoke_result
 
 

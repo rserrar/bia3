@@ -20,8 +20,12 @@ Repositori minim per executar workers Colab contra l'API V3.
      - entrenament amb dades reals:
        - `V3_REAL_DATA_MODE=true`
        - `V3_DATA_DIR=/content/drive/MyDrive/.../data`
-       - `V3_MAX_REAL_ROWS=4096`
-       - `V3_DATA_CACHE_DTYPE=float16` (opcional per reduir RAM/cache)
+        - `V3_MAX_REAL_ROWS=4096`
+        - `V3_VALIDATE_SMOKE_MAX_ROWS=4096` (limit superior per `validate_candidate`, evita mini-fit massa llarg)
+        - `V3_FAIL_ON_NON_FINITE=true` (opcional: falla ràpid si detecta NaN/Inf a les fonts)
+        - `V3_NON_FINITE_SAMPLE_COLS=12` (quantes columnes mostrar del registre conflictiu)
+        - `V3_NON_FINITE_SAMPLE_ROWS=3` (quantes files veïnes mostrar)
+        - `V3_DATA_CACHE_DTYPE=float16` (opcional per reduir RAM/cache)
        - `V3_USE_MEMMAP_CACHE=true` (recomanat)
        - posar CSVs segons `config/experiment_config.json` (`data_paths`)
 3. Executa:

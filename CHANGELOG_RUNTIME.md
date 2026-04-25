@@ -2,6 +2,16 @@
 
 Small operational log to correlate behavior changes with deploy moments.
 
+## 2026-04-25
+
+- **Training data update**:
+  - New dataset loaded for training with `440000` records.
+  - Scope: runtime/data change (no model-policy code change by itself).
+  - Purpose: keep a clear temporal marker to compare before/after training behavior and model quality.
+
+- **Server-side changes documented separately**:
+  - See `V3/server-php/CHANGELOG_RUNTIME.md` for API/policy/runtime server updates.
+
 ## 2026-04-22 17:07:06Z
 
 - **Pre-update snapshot** (`run_fresh_1`):

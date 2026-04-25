@@ -73,6 +73,16 @@ def _is_missing_real_data_failure(result: dict[str, Any]) -> bool:
     return "missing real input data for feature:" in message
 
 
+def _is_non_finite_data_failure(result: dict[str, Any]) -> bool:
+    if str(result.get("status", "")).lower() != "failed":
+        return False
+    error = result.get("error")
+    if not isinstance(error, dict):
+        return False
+    message = str(error.get("error_message", "")).lower()
+    return "non-finite source data detected" in message or "non-finite model" in message
+
+
 def run_worker_loop() -> None:
     settings = load_settings()
     client = WorkerApiClient(settings.api_base_url)
@@ -247,6 +257,12 @@ def run_worker_loop() -> None:
                 if _is_missing_real_data_failure(result):
                     print(
                         f"[ERROR] Missing real training data detected on task_id={task_id}; stopping worker loop to avoid repeated bad claims",
+                        flush=True,
+                    )
+                    break
+                if _is_non_finite_data_failure(result):
+                    print(
+                        f"[ERROR] Non-finite real dataset values detected on task_id={task_id}; stopping worker loop to force dataset cleanup",
                         flush=True,
                     )
                     break

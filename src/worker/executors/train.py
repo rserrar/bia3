@@ -113,6 +113,9 @@ def execute_train_model(payload: dict) -> dict:
                 include_inline_artifacts=settings.train_include_inline_artifacts,
                 include_full_model_artifact=settings.train_include_full_model_artifact,
                 max_inline_artifact_mb=settings.train_max_inline_artifact_mb,
+                fail_on_non_finite=settings.fail_on_non_finite,
+                non_finite_sample_cols=settings.non_finite_sample_cols,
+                non_finite_sample_rows=settings.non_finite_sample_rows,
                 progress_callback=report_progress,
             )
 

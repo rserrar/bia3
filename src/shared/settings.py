@@ -24,6 +24,10 @@ class Settings:
     real_data_mode: bool
     data_dir: str
     max_real_rows: int
+    validate_smoke_max_rows: int
+    fail_on_non_finite: bool
+    non_finite_sample_cols: int
+    non_finite_sample_rows: int
     data_cache_dtype: str
     use_memmap_cache: bool
     train_epochs: int
@@ -73,6 +77,10 @@ def load_settings() -> Settings:
         real_data_mode=os.getenv("V3_REAL_DATA_MODE", "false").lower() in {"1", "true", "yes"},
         data_dir=os.getenv("V3_DATA_DIR", "data"),
         max_real_rows=int(os.getenv("V3_MAX_REAL_ROWS", "4096")),
+        validate_smoke_max_rows=max(128, int(os.getenv("V3_VALIDATE_SMOKE_MAX_ROWS", "4096") or 4096)),
+        fail_on_non_finite=os.getenv("V3_FAIL_ON_NON_FINITE", "false").lower() in {"1", "true", "yes"},
+        non_finite_sample_cols=max(1, int(os.getenv("V3_NON_FINITE_SAMPLE_COLS", "12") or 12)),
+        non_finite_sample_rows=max(1, int(os.getenv("V3_NON_FINITE_SAMPLE_ROWS", "3") or 3)),
         data_cache_dtype=os.getenv("V3_DATA_CACHE_DTYPE", "float32").strip().lower(),
         use_memmap_cache=os.getenv("V3_USE_MEMMAP_CACHE", "true").lower() in {"1", "true", "yes"},
         train_epochs=max(1, int(os.getenv("V3_TRAIN_EPOCHS", "500") or 500)),
