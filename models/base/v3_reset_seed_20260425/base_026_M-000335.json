@@ -1,0 +1,169 @@
+{
+  "model_id": "base_from_M-000335",
+  "version": "1.0.1",
+  "description": "Variant incremental del parent amb la mateixa idea de dues branques temporals, però simplificant la fusió: es conserva context llarg + context recent + extra data obligatòria, i s'elimina l'anchor de last price per provar si la millora ve només de la descomposició temporal.",
+  "change_log": [
+    "Es manté la separació temporal en dues branques de preu: prices_hist_main_700 i prices_hist_last_100.",
+    "Es manté extra_data_details com a entrada obligatòria i estable.",
+    "S'elimina last_closing_price_feature per reduir redundància amb la branca recent i fer l'experiment més net.",
+    "Es manté una fusió simple i compacta per prioritzar estabilitat de build i smoke-fit.",
+    "Es redueix lleument la capacitat post-fusió per evitar sobreajust si l'anchor no aportava senyal útil."
+  ],
+  "llm_reasoning": "La família ja indica que una reestructuració temporal moderada és una hipòtesi plausible, però el parent encara afegeix un anchor mínim del darrer preu que pot ser redundant amb els últims 100 valors. Aquesta mutació prova una versió més neta de la mateixa idea: si la millora prové de separar context llarg i recent, hauria de mantenir-se o millorar sense l'anchor. Si el rendiment baixa, això suggeriria que el darrer preu aporta una normalització local útil o ajuda a calibrar les sortides SL/TB. La mutació és coherent amb l'historial perquè evita repetir exactament el patró del parent i manté el que ja és estable: dues branques de preu, extra data obligatòria i fusió senzilla.",
+  "potential_next_variations": [
+    "Reintroduir last_closing_price_feature amb una projecció més petita si l'anchor resulta útil.",
+    "Augmentar lleument la capacitat de la fusió post-concat si el model infraajusta.",
+    "Reduir la branca de context llarg a 512 o 600 passos si apareix soroll o sobreajust.",
+    "Afegir una branca molt petita per min_prices_hist_800 o max_prices_hist_800 només si la versió sense anchor estabilitza però encara queda marge."
+  ],
+  "seed": 42,
+  "architecture_definition": {
+    "used_inputs": [
+      {
+        "input_layer_name": "input_prices_main_700",
+        "source_feature_name": "prices_hist_main_700",
+        "shape": [
+          700
+        ]
+      },
+      {
+        "input_layer_name": "input_prices_last_100",
+        "source_feature_name": "prices_hist_last_100",
+        "shape": [
+          100
+        ]
+      },
+      {
+        "input_layer_name": "input_extra_data",
+        "source_feature_name": "extra_data_details",
+        "shape": [
+          9
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "branch_prices_long",
+        "input_source_layer": "input_prices_main_700",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 64,
+            "activation": "relu",
+            "name": "prices_long_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 32,
+            "activation": "relu",
+            "name": "prices_long_dense_2"
+          }
+        ],
+        "output_feature_map_name": "prices_long_features"
+      },
+      {
+        "name": "branch_prices_recent",
+        "input_source_layer": "input_prices_last_100",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 32,
+            "activation": "relu",
+            "name": "prices_recent_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 16,
+            "activation": "relu",
+            "name": "prices_recent_dense_2"
+          }
+        ],
+        "output_feature_map_name": "prices_recent_features"
+      },
+      {
+        "name": "branch_extra_data",
+        "input_source_layer": "input_extra_data",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 16,
+            "activation": "relu",
+            "name": "extra_dense_1"
+          }
+        ],
+        "output_feature_map_name": "extra_features"
+      }
+    ],
+    "merges": [
+      {
+        "name": "fusion_main_aux",
+        "type": "concatenate",
+        "source_feature_maps": [
+          "prices_long_features",
+          "prices_recent_features",
+          "extra_features"
+        ],
+        "layers_after_merge": [
+          {
+            "type": "Dense",
+            "units": 64,
+            "activation": "relu",
+            "name": "fusion_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 32,
+            "activation": "relu",
+            "name": "fusion_dense_2"
+          }
+        ],
+        "output_feature_map_name": "shared_features"
+      }
+    ],
+    "output_heads": [
+      {
+        "output_layer_name": "output_stop_loss",
+        "maps_to_target_config_name": "stop_loss_prediction",
+        "source_feature_map": "shared_features",
+        "units": 1,
+        "activation": "linear"
+      },
+      {
+        "output_layer_name": "output_take_profit",
+        "maps_to_target_config_name": "take_profit_prediction",
+        "source_feature_map": "shared_features",
+        "units": 1,
+        "activation": "linear"
+      }
+    ]
+  },
+  "training_config": {
+    "optimizer": "adam",
+    "initial_learning_rate": 0.001,
+    "loss": "mean_squared_error",
+    "batch_size": 1024,
+    "epochs_requested": 500,
+    "validation_split": 0.15,
+    "early_stopping_patience": 15,
+    "reduce_lr_patience": 7,
+    "reduce_lr_factor": 0.5,
+    "min_lr": 1e-06,
+    "restore_best_weights": true,
+    "seed": 42,
+    "target_metric": "val_loss",
+    "target_metric_mode": "min",
+    "verbose": 0,
+    "cache_dtype": "float16",
+    "max_training_minutes": 0
+  },
+  "source_metadata": {
+    "source_run_id": "run_fresh_1",
+    "source_model_id": "M-000335",
+    "source_candidate_id": "cand_b247d46372d2",
+    "decision_score": 0.8519046683128781,
+    "val_loss": 19.442960739135742,
+    "created_at": "2026-04-14T17:29:28Z",
+    "selection_reason": "top_global",
+    "family_key": "parent:M-000297"
+  }
+}

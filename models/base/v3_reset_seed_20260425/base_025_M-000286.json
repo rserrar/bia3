@@ -1,0 +1,216 @@
+{
+  "model_id": "base_from_M-000286",
+  "version": "1.0.0",
+  "description": "Small evolution of the parent tri-input fusion model: keep the long/recent price split and mandatory extra data, but add a lightweight shared fusion MLP plus a direct last-price skip path to improve short-term calibration without changing the stable build pattern.",
+  "change_log": [
+    "Kept the parent's three-input setup: long-context prices, recent-context prices, and mandatory extra data.",
+    "Kept the two mandatory regression outputs: stop_loss_prediction and take_profit_prediction.",
+    "Added a shallow per-branch Dense projection before fusion to make the long and recent branches easier to align.",
+    "Added an explicit skip connection from last_closing_price_feature to the fusion stage to preserve the most recent price anchor.",
+    "Kept the overall depth low and avoided recurrent/attention blocks to preserve smoke-fit and validation stability.",
+    "Did not add optional reconstruction or multi-step outputs, since the parent already targets a stable controlled baseline."
+  ],
+  "llm_reasoning": "The parent is already a stable low-complexity tri-input baseline, but its performance suggests it may still be underusing the most recent price anchor and not fully aligning the long-horizon and short-horizon branches before prediction. This mutation tests a small, attributable hypothesis: a lightweight pre-fusion projection plus a direct last-price skip will improve calibration of SL/TB outputs while keeping optimization stable. This is coherent with the family history because the case study best model improved business-priority metrics without needing a heavy redesign, and the current family has no established alternative pattern to reuse. If this works, it would indicate that modest feature alignment and an explicit price anchor are enough; if it fails, the next step should be either simplifying back to the parent or trying one slightly different fusion strategy rather than increasing model depth aggressively.",
+  "potential_next_variations": [
+    "If this helps, replace the skip path with a gated fusion of last price and recent branch to test whether controlled weighting beats direct concatenation.",
+    "If this helps partially, add a very small shared bottleneck after fusion and before the heads to improve joint calibration of stop_loss and take_profit.",
+    "If this fails, remove the last-price skip and test the same pre-fusion projections alone to isolate whether the anchor is helping or distracting.",
+    "If this fails materially, simplify further to the parent topology but tune head width downward to check whether the model is slightly over-parameterized."
+  ],
+  "seed": 42,
+  "architecture_definition": {
+    "used_inputs": [
+      {
+        "input_layer_name": "input_prices_main_700",
+        "source_feature_name": "prices_hist_main_700",
+        "shape": [
+          700
+        ]
+      },
+      {
+        "input_layer_name": "input_prices_last_100",
+        "source_feature_name": "prices_hist_last_100",
+        "shape": [
+          100
+        ]
+      },
+      {
+        "input_layer_name": "input_extra_data",
+        "source_feature_name": "extra_data_details",
+        "shape": [
+          9
+        ]
+      },
+      {
+        "input_layer_name": "input_last_price",
+        "source_feature_name": "last_closing_price_feature",
+        "shape": [
+          1
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "main_price_branch",
+        "input_source_layer": "input_prices_main_700",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 96,
+            "activation": "relu",
+            "name": "main_price_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 48,
+            "activation": "relu",
+            "name": "main_price_dense_2"
+          }
+        ],
+        "output_feature_map_name": "main_price_features"
+      },
+      {
+        "name": "recent_price_branch",
+        "input_source_layer": "input_prices_last_100",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 64,
+            "activation": "relu",
+            "name": "recent_price_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 32,
+            "activation": "relu",
+            "name": "recent_price_dense_2"
+          }
+        ],
+        "output_feature_map_name": "recent_price_features"
+      },
+      {
+        "name": "extra_data_branch",
+        "input_source_layer": "input_extra_data",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 32,
+            "activation": "relu",
+            "name": "extra_data_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 16,
+            "activation": "relu",
+            "name": "extra_data_dense_2"
+          }
+        ],
+        "output_feature_map_name": "extra_data_features"
+      },
+      {
+        "name": "last_price_branch",
+        "input_source_layer": "input_last_price",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 8,
+            "activation": "relu",
+            "name": "last_price_dense_1"
+          }
+        ],
+        "output_feature_map_name": "last_price_features"
+      }
+    ],
+    "merges": [
+      {
+        "name": "fusion_main_recent",
+        "type": "concatenate",
+        "source_feature_maps": [
+          "main_price_features",
+          "recent_price_features"
+        ],
+        "layers_after_merge": [
+          {
+            "type": "Dense",
+            "units": 64,
+            "activation": "relu",
+            "name": "fusion_main_recent_dense"
+          }
+        ],
+        "output_feature_map_name": "price_fused_features"
+      },
+      {
+        "name": "fusion_all",
+        "type": "concatenate",
+        "source_feature_maps": [
+          "price_fused_features",
+          "extra_data_features",
+          "last_price_features"
+        ],
+        "layers_after_merge": [
+          {
+            "type": "Dense",
+            "units": 64,
+            "activation": "relu",
+            "name": "fusion_all_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 32,
+            "activation": "relu",
+            "name": "fusion_all_dense_2"
+          }
+        ],
+        "output_feature_map_name": "shared_features"
+      }
+    ],
+    "output_heads": [
+      {
+        "output_layer_name": "output_stop_loss",
+        "maps_to_target_config_name": "stop_loss_prediction",
+        "source_feature_map": "shared_features",
+        "units": 1,
+        "activation": "linear"
+      },
+      {
+        "output_layer_name": "output_take_profit",
+        "maps_to_target_config_name": "take_profit_prediction",
+        "source_feature_map": "shared_features",
+        "units": 1,
+        "activation": "linear"
+      }
+    ]
+  },
+  "training_config": {
+    "loss": {
+      "stop_loss_prediction": "mean_squared_error",
+      "take_profit_prediction": "mean_squared_error"
+    },
+    "optimizer": {
+      "name": "adam",
+      "learning_rate": 0.0005
+    },
+    "batch_size": 1024,
+    "epochs": 500,
+    "validation_split": 0.15,
+    "early_stopping_patience": 15,
+    "reduce_lr_patience": 7,
+    "reduce_lr_factor": 0.5,
+    "min_lr": 1e-06,
+    "restore_best_weights": true,
+    "clipnorm": 1,
+    "metrics": [
+      "mae"
+    ]
+  },
+  "source_metadata": {
+    "source_run_id": "run_fresh_1",
+    "source_model_id": "M-000286",
+    "source_candidate_id": "cand_f2278e6fd5a5",
+    "decision_score": 0.845925828187222,
+    "val_loss": 14.758291244506836,
+    "created_at": "2026-04-13T22:25:32Z",
+    "selection_reason": "top_global",
+    "family_key": "parent:M-000038"
+  }
+}

@@ -1,0 +1,180 @@
+{
+  "model_id": "base_from_M-000815",
+  "version": "1.0.1",
+  "description": "Mutació petita del parent: manté la partició temporal main700/last100 i l'anchor de last_closing_price_feature, però afegeix una fusió post-concat més explícita amb una capa densa lleugera per donar una mica més de capacitat a la combinació final sense perdre estabilitat.",
+  "change_log": [
+    "Es manté la mateixa base estable del parent: dues branques temporals separades (main700 i last100), extra_data_details obligatori i last_closing_price_feature com a anchor.",
+    "Es substitueix la fusió jeràrquica mínima per una fusió simple però una mica més expressiva: concatenació de les tres fonts i una Dense petita post-fusió.",
+    "No s'afegeixen noves fonts d'entrada ni cap cap de sortida addicional; es conserva l'objectiu de predir SL i TB amb dues sortides lineals.",
+    "Es manté la complexitat baixa i l'arquitectura fàcil de smoke-fit; el canvi és deliberadament incremental per atribució clara del guany o pèrdua."
+  ],
+  "llm_reasoning": "La família encara no té historial propi, i el parent ja va demostrar que la descomposició temporal és entrenable i estable. La hipòtesi d'aquesta mutació és que el model anterior pot estar una mica curt de capacitat a la capa de fusió, especialment per combinar senyal de recència, context llarg i dades extra. Afegir una Dense petita després de la concatenació pot millorar la interacció entre branques i la priorització de SL/TB sense introduir una arquitectura més fràgil. No canvio el split temporal ni les entrades clau perquè ja són la part més justificable i estable del parent; només faig més potent la decisió final. Si millora, validaria que el coll d'ampolla era la fusió; si empitjora o no canvia, indicaria que el parent ja estava prou expressiu i que convé tornar a simplificar o provar una branca recent una mica més rica.",
+  "potential_next_variations": [
+    "Si millora, provar d'eliminar last_closing_price_feature per veure si l'anchor és redundant.",
+    "Si millora però queda curt, afegir una segona Dense molt petita només a la fusió final.",
+    "Si no millora, tornar a la fusió mínima del parent i provar només un lleu augment de units a la branca recent.",
+    "Si hi ha underfitting clar, fer la branca last100 una mica més expressiva mantenint main700 i extra_data intactes."
+  ],
+  "seed": 42,
+  "architecture_definition": {
+    "used_inputs": [
+      {
+        "input_layer_name": "input_prices_main_700",
+        "source_feature_name": "prices_hist_main_700",
+        "shape": [
+          700
+        ]
+      },
+      {
+        "input_layer_name": "input_prices_last_100",
+        "source_feature_name": "prices_hist_last_100",
+        "shape": [
+          100
+        ]
+      },
+      {
+        "input_layer_name": "input_extra_data",
+        "source_feature_name": "extra_data_details",
+        "shape": [
+          9
+        ]
+      },
+      {
+        "input_layer_name": "input_last_price",
+        "source_feature_name": "last_closing_price_feature",
+        "shape": [
+          1
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "main_branch",
+        "input_source_layer": "input_prices_main_700",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 64,
+            "activation": "relu",
+            "name": "main_dense_1"
+          }
+        ],
+        "output_feature_map_name": "main_features"
+      },
+      {
+        "name": "recent_branch",
+        "input_source_layer": "input_prices_last_100",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 32,
+            "activation": "relu",
+            "name": "recent_dense_1"
+          }
+        ],
+        "output_feature_map_name": "recent_features"
+      },
+      {
+        "name": "extra_branch",
+        "input_source_layer": "input_extra_data",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 16,
+            "activation": "relu",
+            "name": "extra_dense_1"
+          }
+        ],
+        "output_feature_map_name": "extra_features"
+      },
+      {
+        "name": "anchor_branch",
+        "input_source_layer": "input_last_price",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 8,
+            "activation": "relu",
+            "name": "anchor_dense_1"
+          }
+        ],
+        "output_feature_map_name": "anchor_features"
+      }
+    ],
+    "merges": [
+      {
+        "name": "fusion_all",
+        "type": "concatenate",
+        "source_feature_maps": [
+          "main_features",
+          "recent_features",
+          "extra_features",
+          "anchor_features"
+        ],
+        "layers_after_merge": [
+          {
+            "type": "Dense",
+            "units": 64,
+            "activation": "relu",
+            "name": "fusion_dense_1"
+          }
+        ],
+        "output_feature_map_name": "shared_features"
+      }
+    ],
+    "output_heads": [
+      {
+        "output_layer_name": "output_stop_loss",
+        "maps_to_target_config_name": "stop_loss_prediction",
+        "source_feature_map": "shared_features",
+        "units": 1,
+        "activation": "linear"
+      },
+      {
+        "output_layer_name": "output_take_profit",
+        "maps_to_target_config_name": "take_profit_prediction",
+        "source_feature_map": "shared_features",
+        "units": 1,
+        "activation": "linear"
+      }
+    ]
+  },
+  "training_config": {
+    "optimizer": "adam",
+    "initial_learning_rate": 0.001,
+    "loss": "mean_squared_error",
+    "metrics": [
+      "mae"
+    ],
+    "batch_size": 1024,
+    "epochs_requested": 500,
+    "validation_split": 0.15,
+    "early_stopping_patience": 15,
+    "reduce_lr_patience": 7,
+    "reduce_lr_factor": 0.5,
+    "min_lr": 1e-06,
+    "restore_best_weights": true,
+    "seed": 42,
+    "verbose": 0,
+    "cache_dtype": "float16",
+    "target_metric": "early_stop_score",
+    "target_metric_mode": "min",
+    "business_metric_sl_weight": 0.5,
+    "business_metric_tb_weight": 0.5,
+    "business_min_relative_improvement": 0.002,
+    "business_improvement_window": 10,
+    "soft_max_epochs": 120,
+    "max_training_minutes": 0,
+    "inline_artifacts_count": 3
+  },
+  "source_metadata": {
+    "source_run_id": "run_fresh_1",
+    "source_model_id": "M-000815",
+    "source_candidate_id": "cand_9495bd8c2018",
+    "decision_score": 0.8220199078843434,
+    "val_loss": 15.477232933044434,
+    "created_at": "2026-04-22T16:34:39Z",
+    "selection_reason": "top_global",
+    "family_key": "parent:M-000782"
+  }
+}

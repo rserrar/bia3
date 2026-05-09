@@ -1,0 +1,203 @@
+{
+  "model_id": "base_from_M-000444",
+  "version": "1.0.0",
+  "description": "Arquitectura híbrida i controlada que combina una branca temporal simple per al passat de 800 preus amb una branca explícita de recència sobre els últims 100 valors i una fusió compacta amb dades auxiliars, mantenint només les dues sortides SL/TB.",
+  "change_log": [
+    "Es manté l'input mandatory extra_data_details i les dues sortides obligatòries stop_loss_prediction i take_profit_prediction.",
+    "Es substitueix la representació única de la història per una partició temporal explícita: prices_hist_main_700 i prices_hist_last_100.",
+    "S'afegeix una branca molt petita de last_closing_price_feature com a anchor de calibratge final, però sense sobreponderar-la.",
+    "La fusió és en dos passos: primer es combinen els dos blocs temporals, i després s'hi integra extra_data_details per reduir soroll i millorar la interpretabilitat del senyal.",
+    "Es manté una capacitat global baixa per prioritzar estabilitat, smoke-fit fàcil i comparabilitat amb els models bons de referència.",
+    "No s'afegeixen nous objectius ni reconstruccions per evitar una exploració massa ampla en una sola iteració."
+  ],
+  "llm_reasoning": "La hipòtesi principal és que el millor rendiment no vindrà d'afegir més complexitat, sinó de separar millor el rol del context llarg, el context recent i les dades auxiliars. Els models de referència suggereixen que una fusió massa compacta o una història no segmentada poden amagar senyal útil de curt termini, mentre que afegir massa branques o caps tendeix a degradar la robustesa. Aquesta proposta és diferent perquè explora una partició temporal semàntica més clara que el full-history pur, però sense arribar a una arquitectura pesada: només introdueix dues novetats controlades, el split main700/last100 i una fusió jeràrquica lleugera amb anchor final. L'objectiu és comprovar si la generalització SL/TB millora quan el model pot especialitzar el context recent i després calibrar-se amb extra_data_details, mantenint una estructura molt entrenable i atribuïble.",
+  "potential_next_variations": [
+    "Si millora, provar d'eliminar l'anchor last_closing_price_feature per veure si era només calibratge o soroll addicional.",
+    "Si millora parcialment, substituir prices_hist_main_700 per prices_hist_full_800 i comparar si el split temporal és realment millor que el full context.",
+    "Si hi ha underfitting, afegir una sola capa petita post-fusió abans de les sortides, mantenint la resta igual.",
+    "Si hi ha sobreajust, reduir la branca de last_100 o simplificar la fusió a una sola concatenació amb extra_data_details."
+  ],
+  "seed": 42,
+  "architecture_definition": {
+    "used_inputs": [
+      {
+        "input_layer_name": "input_prices_main_700",
+        "source_feature_name": "prices_hist_main_700",
+        "shape": [
+          700
+        ]
+      },
+      {
+        "input_layer_name": "input_prices_last_100",
+        "source_feature_name": "prices_hist_last_100",
+        "shape": [
+          100
+        ]
+      },
+      {
+        "input_layer_name": "input_extra_data",
+        "source_feature_name": "extra_data_details",
+        "shape": [
+          9
+        ]
+      },
+      {
+        "input_layer_name": "input_last_price",
+        "source_feature_name": "last_closing_price_feature",
+        "shape": [
+          1
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "branch_main_history",
+        "input_source_layer": "input_prices_main_700",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 48,
+            "activation": "relu",
+            "name": "main_hist_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 24,
+            "activation": "relu",
+            "name": "main_hist_dense_2"
+          }
+        ],
+        "output_feature_map_name": "main_history_features"
+      },
+      {
+        "name": "branch_recent_history",
+        "input_source_layer": "input_prices_last_100",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 32,
+            "activation": "relu",
+            "name": "recent_hist_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 16,
+            "activation": "relu",
+            "name": "recent_hist_dense_2"
+          }
+        ],
+        "output_feature_map_name": "recent_history_features"
+      },
+      {
+        "name": "branch_extra_data",
+        "input_source_layer": "input_extra_data",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 16,
+            "activation": "relu",
+            "name": "extra_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 8,
+            "activation": "relu",
+            "name": "extra_dense_2"
+          }
+        ],
+        "output_feature_map_name": "extra_features"
+      },
+      {
+        "name": "branch_last_price",
+        "input_source_layer": "input_last_price",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 8,
+            "activation": "relu",
+            "name": "last_price_dense_1"
+          }
+        ],
+        "output_feature_map_name": "last_price_features"
+      }
+    ],
+    "merges": [
+      {
+        "name": "merge_temporal_context",
+        "type": "concatenate",
+        "source_feature_maps": [
+          "main_history_features",
+          "recent_history_features"
+        ],
+        "layers_after_merge": [
+          {
+            "type": "Dense",
+            "units": 32,
+            "activation": "relu",
+            "name": "temporal_fusion_dense_1"
+          }
+        ],
+        "output_feature_map_name": "temporal_features"
+      },
+      {
+        "name": "merge_all_context",
+        "type": "concatenate",
+        "source_feature_maps": [
+          "temporal_features",
+          "extra_features",
+          "last_price_features"
+        ],
+        "layers_after_merge": [
+          {
+            "type": "Dense",
+            "units": 32,
+            "activation": "relu",
+            "name": "shared_fusion_dense_1"
+          }
+        ],
+        "output_feature_map_name": "shared_features"
+      }
+    ],
+    "output_heads": [
+      {
+        "output_layer_name": "output_stop_loss",
+        "maps_to_target_config_name": "stop_loss_prediction",
+        "source_feature_map": "shared_features",
+        "units": 1,
+        "activation": "linear"
+      },
+      {
+        "output_layer_name": "output_take_profit",
+        "maps_to_target_config_name": "take_profit_prediction",
+        "source_feature_map": "shared_features",
+        "units": 1,
+        "activation": "linear"
+      }
+    ]
+  },
+  "training_config": {
+    "loss": "mean_squared_error",
+    "optimizer": "adam",
+    "learning_rate": 0.0005,
+    "batch_size": 1024,
+    "epochs": 500,
+    "validation_split": 0.15,
+    "early_stopping_patience": 15,
+    "reduce_lr_patience": 7,
+    "reduce_lr_factor": 0.5,
+    "min_lr": 1e-06,
+    "restore_best_weights": true,
+    "verbose": 0,
+    "cache_dtype": "float16"
+  },
+  "source_metadata": {
+    "source_run_id": "run_fresh_1",
+    "source_model_id": "M-000444",
+    "source_candidate_id": "cand_730717b840a3",
+    "decision_score": 0.7944132112157186,
+    "val_loss": 15.177933692932129,
+    "created_at": "2026-04-15T00:39:14Z",
+    "selection_reason": "top_global",
+    "family_key": "parent:None"
+  }
+}

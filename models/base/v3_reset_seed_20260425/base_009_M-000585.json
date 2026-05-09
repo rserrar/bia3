@@ -1,0 +1,193 @@
+{
+  "model_id": "base_from_M-000585",
+  "version": "1.0.1",
+  "description": "Small evolution of the parent tri-input price-context fusion model: keep the stable main/recent price split and mandatory extra-data path, but simplify the extra last-price anchor into a lightweight gated fusion so the model can calibrate short-term price level without over-amplifying that signal.",
+  "change_log": [
+    "Kept the parent's core 4-input structure and two mandatory regression outputs unchanged.",
+    "Preserved the main price history split (700 + 100) and the mandatory extra_data_details branch to avoid destabilizing the proven build path.",
+    "Replaced the direct last-price anchor concatenation with a small gated projection path so the model can learn how much to trust the last closing price instead of always injecting it at full strength.",
+    "Added small per-branch Dense projections before fusion to better align feature scales across price and extra-data branches.",
+    "Kept the fusion head shallow and low-capacity to remain close to the parent and maintain smoke-fit stability."
+  ],
+  "llm_reasoning": "Family evidence suggests that adding more direct structure can help business-priority calibration, but the previous parent already introduced a last-price anchor and a small fusion MLP. The next safe hypothesis is that the anchor may be useful but too strong or too literal, so a gated version should let the network selectively use the last closing price when it helps SL/TB prediction and suppress it when it adds noise. This is coherent with the family history because the best case-study model improved val_loss but not decision_score enough, implying the remaining gain is likely in calibration and target alignment rather than in deeper sequence modeling. By keeping the topology shallow and the mandatory inputs intact, we prioritize build/compile/smoke-fit stability while testing a more controlled use of the recent-price signal.",
+  "potential_next_variations": [
+    "If the gated last-price path helps, try a slightly wider shared fusion layer to see whether calibration improves further without hurting stability.",
+    "If the gated anchor is too weak, try restoring the plain last-price concatenation but keep the small pre-projection layers.",
+    "If validation loss improves but decision_score does not, try removing the extra branch projections and simplifying the fusion further.",
+    "If the extra anchor hurts generalization, revert to the exact parent topology and instead tune only training regularization."
+  ],
+  "seed": 42,
+  "architecture_definition": {
+    "used_inputs": [
+      {
+        "input_layer_name": "input_prices_main_700",
+        "source_feature_name": "prices_hist_main_700",
+        "shape": [
+          700
+        ]
+      },
+      {
+        "input_layer_name": "input_prices_last_100",
+        "source_feature_name": "prices_hist_last_100",
+        "shape": [
+          100
+        ]
+      },
+      {
+        "input_layer_name": "input_extra_data",
+        "source_feature_name": "extra_data_details",
+        "shape": [
+          9
+        ]
+      },
+      {
+        "input_layer_name": "input_last_price",
+        "source_feature_name": "last_closing_price_feature",
+        "shape": [
+          1
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "main_price_branch",
+        "input_source_layer": "input_prices_main_700",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 64,
+            "activation": "relu",
+            "name": "main_price_proj"
+          }
+        ],
+        "output_feature_map_name": "main_price_features"
+      },
+      {
+        "name": "recent_price_branch",
+        "input_source_layer": "input_prices_last_100",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 32,
+            "activation": "relu",
+            "name": "recent_price_proj"
+          }
+        ],
+        "output_feature_map_name": "recent_price_features"
+      },
+      {
+        "name": "extra_data_branch",
+        "input_source_layer": "input_extra_data",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 16,
+            "activation": "relu",
+            "name": "extra_data_proj"
+          }
+        ],
+        "output_feature_map_name": "extra_data_features"
+      },
+      {
+        "name": "last_price_branch",
+        "input_source_layer": "input_last_price",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 8,
+            "activation": "relu",
+            "name": "last_price_proj"
+          },
+          {
+            "type": "Dense",
+            "units": 8,
+            "activation": "sigmoid",
+            "name": "last_price_gate"
+          }
+        ],
+        "output_feature_map_name": "last_price_features"
+      }
+    ],
+    "merges": [
+      {
+        "name": "fusion_main_recent",
+        "type": "concatenate",
+        "source_feature_maps": [
+          "main_price_features",
+          "recent_price_features"
+        ],
+        "layers_after_merge": [
+          {
+            "type": "Dense",
+            "units": 64,
+            "activation": "relu",
+            "name": "fusion_main_recent_dense"
+          }
+        ],
+        "output_feature_map_name": "price_context_features"
+      },
+      {
+        "name": "fusion_all",
+        "type": "concatenate",
+        "source_feature_maps": [
+          "price_context_features",
+          "extra_data_features",
+          "last_price_features"
+        ],
+        "layers_after_merge": [
+          {
+            "type": "Dense",
+            "units": 32,
+            "activation": "relu",
+            "name": "fusion_shared_dense"
+          }
+        ],
+        "output_feature_map_name": "shared_features"
+      }
+    ],
+    "output_heads": [
+      {
+        "output_layer_name": "output_stop_loss",
+        "maps_to_target_config_name": "stop_loss_prediction",
+        "source_feature_map": "shared_features",
+        "units": 1,
+        "activation": "linear"
+      },
+      {
+        "output_layer_name": "output_take_profit",
+        "maps_to_target_config_name": "take_profit_prediction",
+        "source_feature_map": "shared_features",
+        "units": 1,
+        "activation": "linear"
+      }
+    ]
+  },
+  "training_config": {
+    "optimizer": "adam",
+    "initial_learning_rate": 0.001,
+    "batch_size": 1024,
+    "epochs_requested": 500,
+    "validation_split": 0.15,
+    "early_stopping_patience": 15,
+    "reduce_lr_patience": 7,
+    "reduce_lr_factor": 0.5,
+    "min_lr": 1e-06,
+    "restore_best_weights": true,
+    "target_metric": "val_loss",
+    "target_metric_mode": "min",
+    "seed": 42,
+    "verbose": 0,
+    "max_training_minutes": 0,
+    "cache_dtype": "float16"
+  },
+  "source_metadata": {
+    "source_run_id": "run_fresh_1",
+    "source_model_id": "M-000585",
+    "source_candidate_id": "cand_2c4d96159902",
+    "decision_score": 0.8016303610793644,
+    "val_loss": 13.305801391601562,
+    "created_at": "2026-04-17T03:08:37Z",
+    "selection_reason": "top_global",
+    "family_key": "parent:M-000286"
+  }
+}

@@ -1,0 +1,162 @@
+{
+  "model_id": "base_from_M-000509",
+  "version": "1.0.0",
+  "description": "Mutació conservadora de M-000313 que manté els tres inputs i les dues sortides, però prova una fusió una mica més directa amb una branca de recència lleugerament reforçada per veure si el coll d'ampolla és a la combinació final.",
+  "change_log": [
+    "Es mantenen els inputs validats del parent: prices_hist_full_800, extra_data_details i last_closing_price_feature.",
+    "Es mantenen les dues sortides obligatòries: stop_loss_prediction i take_profit_prediction.",
+    "Es conserva la branca principal de full history amb la mateixa profunditat estable per no perdre el patró que ja és build-safe.",
+    "Es conserva la branca d'extra data compacta, perquè la família ja ha mostrat que aquest senyal és útil però no convé sobredimensionar-lo.",
+    "Es reforça lleument la branca de last_closing_price_feature amb una projecció una mica més ampla per donar més pes al senyal de curt termini sense canviar l'input.",
+    "Es simplifica la fusió post-concatenació a una sola capa compacta, reduint compressió però evitant una arquitectura més profunda que pugui afegir soroll.",
+    "No s'afegeixen nous inputs, no es canvien targets i no s'introdueixen caps addicionals per mantenir comparabilitat i estabilitat.",
+    "Es manté una configuració d'entrenament conservadora per facilitar smoke-fit i atribució clara de qualsevol canvi en val_loss o decision_score."
+  ],
+  "llm_reasoning": "La família mostra que els canvis petits i atribuïbles són els més fiables, i que el parent M-000313 ja és una base estable però possiblement massa compactada al final. Els fills de referència amb més capacitat a la recència i una fusió menys restrictiva no han superat el parent, però sí que indiquen una hipòtesi coherent: si hi ha marge de millora, probablement està en la combinació final i no en redissenyar el backbone. Aquesta mutació prova una variant intermèdia, més simple que els fills més expressius, per comprovar si una lleu ampliació de la branca last price i una fusió directa poden millorar la generalització sense trencar la simplicitat del model. Si funciona, reforça que el model estava infrautilitzant el senyal de curt termini; si falla, confirma que el parent ja estava ben calibrat o que el recency signal no aporta prou valor net per al business score.",
+  "potential_next_variations": [
+    "Si millora, provar prices_hist_last_100 mantenint la mateixa fusió simple per veure si el senyal recent més ric ajuda.",
+    "Si millora parcialment, reintroduir una segona capa petita post-fusió per buscar un punt intermedi de capacitat.",
+    "Si falla, tornar a la branca last price compacta del parent i provar només un ajust a full_history o extra_data.",
+    "Si hi ha sobreajust, reduir lleument la branca full_history abans de tocar més la recència."
+  ],
+  "seed": 42,
+  "architecture_definition": {
+    "used_inputs": [
+      {
+        "input_layer_name": "input_prices_full_800",
+        "source_feature_name": "prices_hist_full_800",
+        "shape": [
+          800
+        ]
+      },
+      {
+        "input_layer_name": "input_extra_data",
+        "source_feature_name": "extra_data_details",
+        "shape": [
+          9
+        ]
+      },
+      {
+        "input_layer_name": "input_last_price",
+        "source_feature_name": "last_closing_price_feature",
+        "shape": [
+          1
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "branch_full_history",
+        "input_source_layer": "input_prices_full_800",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 64,
+            "activation": "relu",
+            "name": "full_hist_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 32,
+            "activation": "relu",
+            "name": "full_hist_dense_2"
+          }
+        ],
+        "output_feature_map_name": "full_history_features"
+      },
+      {
+        "name": "branch_extra_data",
+        "input_source_layer": "input_extra_data",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 16,
+            "activation": "relu",
+            "name": "extra_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 8,
+            "activation": "relu",
+            "name": "extra_dense_2"
+          }
+        ],
+        "output_feature_map_name": "extra_features"
+      },
+      {
+        "name": "branch_last_price",
+        "input_source_layer": "input_last_price",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 24,
+            "activation": "relu",
+            "name": "last_price_dense_1"
+          }
+        ],
+        "output_feature_map_name": "last_price_features"
+      }
+    ],
+    "merges": [
+      {
+        "name": "fusion_main_aux",
+        "type": "concatenate",
+        "source_feature_maps": [
+          "full_history_features",
+          "extra_features",
+          "last_price_features"
+        ],
+        "layers_after_merge": [
+          {
+            "type": "Dense",
+            "units": 48,
+            "activation": "relu",
+            "name": "fusion_dense_1"
+          }
+        ],
+        "output_feature_map_name": "shared_features"
+      }
+    ],
+    "output_heads": [
+      {
+        "output_layer_name": "output_stop_loss",
+        "maps_to_target_config_name": "stop_loss_prediction",
+        "source_feature_map": "shared_features",
+        "units": 1,
+        "activation": "linear"
+      },
+      {
+        "output_layer_name": "output_take_profit",
+        "maps_to_target_config_name": "take_profit_prediction",
+        "source_feature_map": "shared_features",
+        "units": 1,
+        "activation": "linear"
+      }
+    ]
+  },
+  "training_config": {
+    "loss": "mean_squared_error",
+    "optimizer": "adam",
+    "learning_rate": 0.0005,
+    "batch_size": 1024,
+    "epochs": 500,
+    "validation_split": 0.15,
+    "early_stopping_patience": 15,
+    "reduce_lr_patience": 7,
+    "reduce_lr_factor": 0.5,
+    "min_lr": 1e-06,
+    "restore_best_weights": true,
+    "verbose": 0,
+    "cache_dtype": "float16"
+  },
+  "source_metadata": {
+    "source_run_id": "run_fresh_1",
+    "source_model_id": "M-000509",
+    "source_candidate_id": "cand_03f893cbd448",
+    "decision_score": 0.7968487256785499,
+    "val_loss": 14.118024826049805,
+    "created_at": "2026-04-17T00:44:41Z",
+    "selection_reason": "best_of_day",
+    "family_key": "parent:M-000313"
+  }
+}

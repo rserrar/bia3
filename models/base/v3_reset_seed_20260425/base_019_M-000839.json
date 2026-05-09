@@ -1,0 +1,230 @@
+{
+  "model_id": "base_from_M-000839",
+  "version": "1.0.0",
+  "description": "Variant incremental del parent que manté el split temporal main700/last100 i l'anchor final, però afegeix una petita branca de reconstrucció del tram recent per regularitzar la representació i provar si millora la decisió SL/TB sense perdre estabilitat.",
+  "change_log": [
+    "Es manté la base del parent: main700 i last100 com a separació explícita de context llarg i senyal recent.",
+    "Es manté extra_data_details com a input obligatori i last_closing_price_feature com a anchor mínim per conservar l'estabilitat de la família.",
+    "S'afegeix una branca auxiliar molt petita per al tram last100 amb objectiu de reconstrucció, per forçar una representació més fidel del recent sense augmentar gaire la capacitat del camí principal.",
+    "La fusió principal continua sent compacta i simple, prioritzant compilació i smoke-fit estables.",
+    "No s'introdueixen noves sortides principals de negoci; l'objectiu és regularitzar i no redissenyar el problema."
+  ],
+  "llm_reasoning": "La família ja ha provat dues direccions clares: un split temporal explícit amb anchor lleuger i una versió més simple amb seqüència completa. El parent actual té millor val_loss i val_mae que el millor historial, però el decision_score encara és baix, cosa que suggereix que el problema pot ser més de representació útil per a SL/TB que no pas de pura capacitat. Aquesta mutació prova una hipòtesi concreta: mantenir el split que ja funciona per estabilitat, però afegir una pressió auxiliar molt petita sobre el tram recent per evitar que la branca last100 quedi massa lliure o massa sorollosa. Si funciona, esperaríem una millor calibració de la part recent i una millora del decision_score amb impacte limitat en la robustesa. Si no funciona, el següent pas lògic seria retirar l'auxiliar i simplificar encara més, o bé canviar l'anchor last_closing_price_feature per veure si està aportant soroll més que senyal.",
+  "potential_next_variations": [
+    "Eliminar la branca auxiliar de reconstrucció si no millora el decision_score o complica l'entrenament.",
+    "Treure last_closing_price_feature si l'anchor no aporta estabilitat neta.",
+    "Recuperar una mica de capacitat a la branca recent si apareix underfitting.",
+    "Provar la mateixa idea sobre prices_hist_full_800 per comparar regularització del split versus entrada única."
+  ],
+  "seed": 42,
+  "architecture_definition": {
+    "used_inputs": [
+      {
+        "input_layer_name": "input_prices_main_700",
+        "source_feature_name": "prices_hist_main_700",
+        "shape": [
+          700
+        ]
+      },
+      {
+        "input_layer_name": "input_prices_last_100",
+        "source_feature_name": "prices_hist_last_100",
+        "shape": [
+          100
+        ]
+      },
+      {
+        "input_layer_name": "input_extra_data",
+        "source_feature_name": "extra_data_details",
+        "shape": [
+          9
+        ]
+      },
+      {
+        "input_layer_name": "input_last_price",
+        "source_feature_name": "last_closing_price_feature",
+        "shape": [
+          1
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "main_history_branch",
+        "input_source_layer": "input_prices_main_700",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 96,
+            "activation": "relu",
+            "name": "main_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 48,
+            "activation": "relu",
+            "name": "main_dense_2"
+          }
+        ],
+        "output_feature_map_name": "main_history_features"
+      },
+      {
+        "name": "recent_history_branch",
+        "input_source_layer": "input_prices_last_100",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 48,
+            "activation": "relu",
+            "name": "recent_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 24,
+            "activation": "relu",
+            "name": "recent_dense_2"
+          }
+        ],
+        "output_feature_map_name": "recent_history_features"
+      },
+      {
+        "name": "recent_reconstruction_branch",
+        "input_source_layer": "input_prices_last_100",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 32,
+            "activation": "relu",
+            "name": "recent_recon_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 32,
+            "activation": "relu",
+            "name": "recent_recon_dense_2"
+          }
+        ],
+        "output_feature_map_name": "recent_reconstruction_features"
+      },
+      {
+        "name": "extra_data_branch",
+        "input_source_layer": "input_extra_data",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 32,
+            "activation": "relu",
+            "name": "extra_dense_1"
+          }
+        ],
+        "output_feature_map_name": "extra_data_features"
+      },
+      {
+        "name": "last_price_branch",
+        "input_source_layer": "input_last_price",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 8,
+            "activation": "relu",
+            "name": "last_price_dense_1"
+          }
+        ],
+        "output_feature_map_name": "last_price_features"
+      }
+    ],
+    "merges": [
+      {
+        "name": "fusion_main_recent",
+        "type": "concatenate",
+        "source_feature_maps": [
+          "main_history_features",
+          "recent_history_features"
+        ],
+        "layers_after_merge": [
+          {
+            "type": "Dense",
+            "units": 64,
+            "activation": "relu",
+            "name": "fusion_temporal_dense_1"
+          }
+        ],
+        "output_feature_map_name": "temporal_fused_features"
+      },
+      {
+        "name": "fusion_with_aux",
+        "type": "concatenate",
+        "source_feature_maps": [
+          "temporal_fused_features",
+          "extra_data_features",
+          "last_price_features"
+        ],
+        "layers_after_merge": [
+          {
+            "type": "Dense",
+            "units": 32,
+            "activation": "relu",
+            "name": "fusion_aux_dense_1"
+          }
+        ],
+        "output_feature_map_name": "shared_features"
+      }
+    ],
+    "output_heads": [
+      {
+        "output_layer_name": "output_stop_loss",
+        "maps_to_target_config_name": "stop_loss_prediction",
+        "source_feature_map": "shared_features",
+        "units": 1,
+        "activation": "linear"
+      },
+      {
+        "output_layer_name": "output_take_profit",
+        "maps_to_target_config_name": "take_profit_prediction",
+        "source_feature_map": "shared_features",
+        "units": 1,
+        "activation": "linear"
+      },
+      {
+        "output_layer_name": "output_hist_100_reconstruction",
+        "maps_to_target_config_name": "reconstruct_prices_last_100_target",
+        "source_feature_map": "recent_reconstruction_features",
+        "units": 100,
+        "activation": "linear"
+      }
+    ]
+  },
+  "training_config": {
+    "optimizer": "adam",
+    "initial_learning_rate": 0.001,
+    "batch_size": 1024,
+    "epochs_requested": 500,
+    "validation_split": 0.15,
+    "early_stopping_patience": 15,
+    "reduce_lr_patience": 7,
+    "reduce_lr_factor": 0.5,
+    "min_lr": 1e-06,
+    "restore_best_weights": true,
+    "seed": 42,
+    "verbose": 0,
+    "target_metric": "early_stop_score",
+    "target_metric_mode": "min",
+    "max_training_minutes": 0,
+    "business_metric_sl_weight": 0.5,
+    "business_metric_tb_weight": 0.5,
+    "business_min_relative_improvement": 0.002,
+    "business_improvement_window": 10,
+    "soft_max_epochs": 120,
+    "cache_dtype": "float16"
+  },
+  "source_metadata": {
+    "source_run_id": "run_fresh_1",
+    "source_model_id": "M-000839",
+    "source_candidate_id": "cand_3b1d4305b6fb",
+    "decision_score": 0.8315309464043511,
+    "val_loss": 24.7300968170166,
+    "created_at": "2026-04-22T17:15:43Z",
+    "selection_reason": "top_global",
+    "family_key": "parent:M-000716"
+  }
+}

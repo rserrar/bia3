@@ -1,0 +1,243 @@
+{
+  "model_id": "base_from_M-000902",
+  "version": "1.0.0",
+  "description": "Arquitectura híbrida amb dues vistes temporals i un camí auxiliar de reconstrucció: fa servir un encoder curt/llarg separat, una fusió per atenció sobre les dues escales i una branca de reconstrucció del tram recent per forçar estabilitat i millor calibració SL/TB.",
+  "change_log": [
+    "Es manté l'ús d'inputs valids i obligatoris, però es canvia la topologia: en lloc d'una fusió purament concatenativa, s'introdueix una fusió per atenció entre context llarg i recent.",
+    "S'afegeix un camí auxiliar de reconstrucció del tram recent (100 dies) per regularitzar la representació i reduir errors de calibració en la branca principal.",
+    "Es conserva extra_data_details com a entrada obligatòria, però ara entra després d'una projecció comuna amb les dues vistes temporals per evitar que domini la fusió.",
+    "S'introdueix un refinament menor d'anchor amb last_closing_price_feature al final, però només com a senyal de calibració i no com a branca protagonista.",
+    "La proposta busca explícitament un pas més competitiu que els splits simples: aprofitar interaccions entre escales i regularització auxiliar per reduir val_loss i millorar el decision_score sense perdre estabilitat."
+  ],
+  "llm_reasoning": "Els models forts recents mostren que separar context llarg i recent és útil, però la família sembla saturada amb fusió per concatenació i capacitat linealment apilada. Per reduir el gap amb el millor run, aquesta proposta canvia el flux: cada escala es codifica de manera compacta, després es combina amb una fusió per atenció que pot ponderar dinàmicament si el senyal recent o el context llarg és més rellevant per a SL/TB. Això és diferent d'una simple còpia del split temporal perquè la decisió de fusió no és fixa; la capa d'atenció pot aprendre a donar més pes al tram recent en règims volàtils i al context llarg en règims més estacionaris. El camí auxiliar de reconstrucció del tram recent actua com a regularitzador estructural: obliga el model a conservar informació fina del curt termini, que sovint és clau per al business score però es perd amb compressions agressives. L'anchor final de last_closing_price_feature es manté com a refinament menor per calibrar la sortida, però ja no és el centre de l'arquitectura. L'objectiu competitiu és atacar simultàniament el soroll de fusió i la pèrdua d'informació recent, dues causes plausibles del gap respecte champion/top run.",
+  "potential_next_variations": [
+    "Eliminar l'anchor last_closing_price_feature si la fusió per atenció ja calibra prou bé.",
+    "Canviar la reconstrucció del tram recent per una reconstrucció de min/max històrics si el curt termini no és el principal error.",
+    "Provar la mateixa topologia amb prices_hist_full_800 com a única seqüència i dues projeccions internes, per comparar split explícit vs encoder únic.",
+    "Afegir una segona atenció lleugera després de fusionar extra_data_details si el model queda curt en interacció amb variables fonamentals."
+  ],
+  "seed": 42,
+  "architecture_definition": {
+    "used_inputs": [
+      {
+        "input_layer_name": "input_prices_main_700",
+        "source_feature_name": "prices_hist_main_700",
+        "shape": [
+          700
+        ]
+      },
+      {
+        "input_layer_name": "input_prices_last_100",
+        "source_feature_name": "prices_hist_last_100",
+        "shape": [
+          100
+        ]
+      },
+      {
+        "input_layer_name": "input_extra_data",
+        "source_feature_name": "extra_data_details",
+        "shape": [
+          9
+        ]
+      },
+      {
+        "input_layer_name": "input_last_price",
+        "source_feature_name": "last_closing_price_feature",
+        "shape": [
+          1
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "main_history_branch",
+        "input_source_layer": "input_prices_main_700",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 128,
+            "activation": "relu",
+            "name": "main_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 64,
+            "activation": "relu",
+            "name": "main_dense_2"
+          }
+        ],
+        "output_feature_map_name": "main_history_features"
+      },
+      {
+        "name": "recent_history_branch",
+        "input_source_layer": "input_prices_last_100",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 64,
+            "activation": "relu",
+            "name": "recent_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 32,
+            "activation": "relu",
+            "name": "recent_dense_2"
+          }
+        ],
+        "output_feature_map_name": "recent_history_features"
+      },
+      {
+        "name": "extra_data_branch",
+        "input_source_layer": "input_extra_data",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 32,
+            "activation": "relu",
+            "name": "extra_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 16,
+            "activation": "relu",
+            "name": "extra_dense_2"
+          }
+        ],
+        "output_feature_map_name": "extra_data_features"
+      },
+      {
+        "name": "last_price_branch",
+        "input_source_layer": "input_last_price",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 8,
+            "activation": "relu",
+            "name": "last_price_dense_1"
+          }
+        ],
+        "output_feature_map_name": "last_price_features"
+      },
+      {
+        "name": "recent_reconstruction_branch",
+        "input_source_layer": "input_prices_last_100",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 64,
+            "activation": "relu",
+            "name": "recent_recon_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 100,
+            "activation": "linear",
+            "name": "recent_recon_output"
+          }
+        ],
+        "output_feature_map_name": "recent_reconstruction_features"
+      }
+    ],
+    "merges": [
+      {
+        "name": "temporal_attention_fusion",
+        "type": "attention",
+        "source_feature_maps": [
+          "main_history_features",
+          "recent_history_features"
+        ],
+        "layers_after_merge": [
+          {
+            "type": "Dense",
+            "units": 64,
+            "activation": "relu",
+            "name": "temporal_fusion_dense_1"
+          }
+        ],
+        "output_feature_map_name": "temporal_fused_features"
+      },
+      {
+        "name": "aux_context_fusion",
+        "type": "concatenate",
+        "source_feature_maps": [
+          "temporal_fused_features",
+          "extra_data_features",
+          "last_price_features"
+        ],
+        "layers_after_merge": [
+          {
+            "type": "Dense",
+            "units": 48,
+            "activation": "relu",
+            "name": "aux_fusion_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 24,
+            "activation": "relu",
+            "name": "aux_fusion_dense_2"
+          }
+        ],
+        "output_feature_map_name": "shared_features"
+      }
+    ],
+    "output_heads": [
+      {
+        "output_layer_name": "output_stop_loss",
+        "maps_to_target_config_name": "stop_loss_prediction",
+        "source_feature_map": "shared_features",
+        "units": 1,
+        "activation": "linear"
+      },
+      {
+        "output_layer_name": "output_take_profit",
+        "maps_to_target_config_name": "take_profit_prediction",
+        "source_feature_map": "shared_features",
+        "units": 1,
+        "activation": "linear"
+      },
+      {
+        "output_layer_name": "output_hist_100_reconstruction",
+        "maps_to_target_config_name": "reconstruct_prices_last_100_target",
+        "source_feature_map": "recent_reconstruction_features",
+        "units": 100,
+        "activation": "linear"
+      }
+    ]
+  },
+  "training_config": {
+    "optimizer": "adam",
+    "initial_learning_rate": 0.001,
+    "batch_size": 1024,
+    "epochs_requested": 500,
+    "validation_split": 0.15,
+    "early_stopping_patience": 15,
+    "reduce_lr_patience": 7,
+    "reduce_lr_factor": 0.5,
+    "min_lr": 1e-06,
+    "restore_best_weights": true,
+    "seed": 42,
+    "verbose": 0,
+    "target_metric": "early_stop_score",
+    "target_metric_mode": "min",
+    "max_training_minutes": 0,
+    "business_metric_sl_weight": 0.45,
+    "business_metric_tb_weight": 0.45,
+    "business_metric_aux_weight": 0.1,
+    "business_min_relative_improvement": 0.002,
+    "business_improvement_window": 10,
+    "soft_max_epochs": 120,
+    "cache_dtype": "float16"
+  },
+  "source_metadata": {
+    "source_run_id": "run_fresh_1",
+    "source_model_id": "M-000902",
+    "source_candidate_id": "cand_8c9c25ae3f6f",
+    "decision_score": 0.7860945638633305,
+    "val_loss": 18.4198055267334,
+    "created_at": "2026-04-22T23:28:52Z",
+    "selection_reason": "top_global",
+    "family_key": "parent:None"
+  }
+}

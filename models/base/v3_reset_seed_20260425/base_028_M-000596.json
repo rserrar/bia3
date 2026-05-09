@@ -1,0 +1,239 @@
+{
+  "model_id": "base_from_M-000596",
+  "version": "1.0.0",
+  "description": "Evolució petita del parent: manté full_800 + last_100 + extra + last_price, però simplifica la fusió amb una branca full_800 una mica més estreta i afegeix una branca auxiliar de rang amb min/max_800 per provar si el context de volatilitat millora la decisió sense perdre estabilitat.",
+  "change_log": [
+    "Es manté el patró multi-input i la sortida dual del parent per preservar estabilitat de build i smoke-fit.",
+    "Es conserva prices_hist_full_800 com a branca principal, però amb una projecció una mica més compacta per reduir capacitat i possible soroll.",
+    "Es conserva prices_hist_last_100 i extra_data_details com a senyal recent i fonamental ja provat.",
+    "Es manté last_closing_price_feature com a ancoratge scalar perquè el parent ja suggeria que pot aportar nivell relatiu útil.",
+    "S'afegeix una fusió auxiliar de min_prices_hist_800 i max_prices_hist_800 per capturar rang/volatilitat de forma explícita, sense afegir complexitat excessiva a la branca principal.",
+    "La fusió final segueix sent simple i concatenativa, però amb una capa densa més estreta per controlar sobreajust."
+  ],
+  "llm_reasoning": "La família ja ha explorat variants basades en context temporal ampli i ancoratge de preu, però no hi ha memòria explícita de proves amb rang intradia. La hipòtesi és que el model pot millorar decision_score si combina tres tipus d'informació complementària: tendència llarga (full_800), microcontext recent (last_100), i amplitud/volatilitat (min/max_800), mentre es manté last_price com a referència de nivell. No canvio el patró general perquè el parent ja és estable i entrenable; només introdueixo una branca auxiliar nova i una lleu reducció de capacitat a la branca principal per evitar que el model es desboqui. Si la mutació funciona, esperaria una millora moderada de val_loss/val_mae o, com a mínim, una millor decisió de negoci amb estabilitat similar. Si falla, el següent pas lògic és retirar last_price o la branca min/max i comparar quina aporta més senyal.",
+  "potential_next_variations": [
+    "Eliminar last_closing_price_feature i comparar full_800 + last_100 + extra + min/max_800.",
+    "Provar només min_prices_hist_800 o només max_prices_hist_800 per veure si el rang útil ve més de suport o de resistència.",
+    "Dividir full_800 en dos trams 400+400 amb dues branques simètriques i una fusió lleugera.",
+    "Ajustar a la baixa la capacitat de la fusió final si apareix sobreajust o inestabilitat."
+  ],
+  "seed": 42,
+  "architecture_definition": {
+    "used_inputs": [
+      {
+        "input_layer_name": "input_prices_full_800",
+        "source_feature_name": "prices_hist_full_800",
+        "shape": [
+          800
+        ]
+      },
+      {
+        "input_layer_name": "input_prices_last_100",
+        "source_feature_name": "prices_hist_last_100",
+        "shape": [
+          100
+        ]
+      },
+      {
+        "input_layer_name": "input_extra_data",
+        "source_feature_name": "extra_data_details",
+        "shape": [
+          9
+        ]
+      },
+      {
+        "input_layer_name": "input_last_price",
+        "source_feature_name": "last_closing_price_feature",
+        "shape": [
+          1
+        ]
+      },
+      {
+        "input_layer_name": "input_min_hist_800",
+        "source_feature_name": "min_prices_hist_800",
+        "shape": [
+          800
+        ]
+      },
+      {
+        "input_layer_name": "input_max_hist_800",
+        "source_feature_name": "max_prices_hist_800",
+        "shape": [
+          800
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "branch_full_800",
+        "input_source_layer": "input_prices_full_800",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 48,
+            "activation": "relu",
+            "name": "full_800_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 24,
+            "activation": "relu",
+            "name": "full_800_dense_2"
+          }
+        ],
+        "output_feature_map_name": "full_800_features"
+      },
+      {
+        "name": "branch_last_100",
+        "input_source_layer": "input_prices_last_100",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 32,
+            "activation": "relu",
+            "name": "last_100_dense_1"
+          }
+        ],
+        "output_feature_map_name": "last_100_features"
+      },
+      {
+        "name": "branch_extra",
+        "input_source_layer": "input_extra_data",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 16,
+            "activation": "relu",
+            "name": "extra_dense_1"
+          }
+        ],
+        "output_feature_map_name": "extra_features"
+      },
+      {
+        "name": "branch_last_price",
+        "input_source_layer": "input_last_price",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 8,
+            "activation": "relu",
+            "name": "last_price_dense_1"
+          }
+        ],
+        "output_feature_map_name": "last_price_features"
+      },
+      {
+        "name": "branch_min_800",
+        "input_source_layer": "input_min_hist_800",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 24,
+            "activation": "relu",
+            "name": "min_800_dense_1"
+          }
+        ],
+        "output_feature_map_name": "min_800_features"
+      },
+      {
+        "name": "branch_max_800",
+        "input_source_layer": "input_max_hist_800",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 24,
+            "activation": "relu",
+            "name": "max_800_dense_1"
+          }
+        ],
+        "output_feature_map_name": "max_800_features"
+      }
+    ],
+    "merges": [
+      {
+        "name": "merge_range_context",
+        "type": "concatenate",
+        "source_feature_maps": [
+          "min_800_features",
+          "max_800_features"
+        ],
+        "layers_after_merge": [
+          {
+            "type": "Dense",
+            "units": 24,
+            "activation": "relu",
+            "name": "range_context_dense_1"
+          }
+        ],
+        "output_feature_map_name": "range_context_features"
+      },
+      {
+        "name": "merge_main_context",
+        "type": "concatenate",
+        "source_feature_maps": [
+          "full_800_features",
+          "last_100_features",
+          "extra_features",
+          "last_price_features",
+          "range_context_features"
+        ],
+        "layers_after_merge": [
+          {
+            "type": "Dense",
+            "units": 48,
+            "activation": "relu",
+            "name": "fusion_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 24,
+            "activation": "relu",
+            "name": "fusion_dense_2"
+          }
+        ],
+        "output_feature_map_name": "shared_features"
+      }
+    ],
+    "output_heads": [
+      {
+        "output_layer_name": "output_stop_loss",
+        "maps_to_target_config_name": "stop_loss_prediction",
+        "source_feature_map": "shared_features",
+        "units": 1,
+        "activation": "linear"
+      },
+      {
+        "output_layer_name": "output_take_profit",
+        "maps_to_target_config_name": "take_profit_prediction",
+        "source_feature_map": "shared_features",
+        "units": 1,
+        "activation": "linear"
+      }
+    ]
+  },
+  "training_config": {
+    "loss": "mean_squared_error",
+    "optimizer": "adam",
+    "learning_rate": 0.0005,
+    "batch_size": 1024,
+    "epochs": 500,
+    "validation_split": 0.15,
+    "early_stopping_patience": 15,
+    "reduce_lr_patience": 7,
+    "reduce_lr_factor": 0.5,
+    "min_lr": 1e-06,
+    "restore_best_weights": true,
+    "verbose": 1,
+    "cache_dtype": "float16"
+  },
+  "source_metadata": {
+    "source_run_id": "run_fresh_1",
+    "source_model_id": "M-000596",
+    "source_candidate_id": "cand_dabdd8f04804",
+    "decision_score": 0.8543955832676358,
+    "val_loss": 16.0050106048584,
+    "created_at": "2026-04-17T03:31:32Z",
+    "selection_reason": "top_global",
+    "family_key": "parent:M-000094"
+  }
+}

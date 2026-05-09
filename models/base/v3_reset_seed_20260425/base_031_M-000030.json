@@ -1,0 +1,112 @@
+{
+  "architecture_definition": {
+    "used_inputs": [
+      {
+        "input_layer_name": "input_prices_full_800",
+        "source_feature_name": "prices_hist_full_800",
+        "shape": [
+          800
+        ]
+      },
+      {
+        "input_layer_name": "input_extra_data",
+        "source_feature_name": "extra_data_details",
+        "shape": [
+          9
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "prices_branch",
+        "input_source_layer": "input_prices_full_800",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 128,
+            "activation": "relu",
+            "name": "prices_dense_128"
+          },
+          {
+            "type": "Dense",
+            "units": 64,
+            "activation": "relu",
+            "name": "prices_dense_64"
+          }
+        ],
+        "output_feature_map_name": "prices_features"
+      },
+      {
+        "name": "extra_branch",
+        "input_source_layer": "input_extra_data",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 32,
+            "activation": "relu",
+            "name": "extra_dense_32"
+          },
+          {
+            "type": "Dense",
+            "units": 16,
+            "activation": "relu",
+            "name": "extra_dense_16"
+          }
+        ],
+        "output_feature_map_name": "extra_features"
+      }
+    ],
+    "merges": [
+      {
+        "name": "fusion_main_aux",
+        "type": "concatenate",
+        "source_feature_maps": [
+          "prices_features",
+          "extra_features"
+        ],
+        "layers_after_merge": [
+          {
+            "type": "Dense",
+            "units": 64,
+            "activation": "relu",
+            "name": "fusion_dense_64"
+          },
+          {
+            "type": "Dense",
+            "units": 32,
+            "activation": "relu",
+            "name": "fusion_dense_32"
+          }
+        ],
+        "output_feature_map_name": "shared_features"
+      }
+    ],
+    "output_heads": [
+      {
+        "output_layer_name": "output_stop_loss",
+        "maps_to_target_config_name": "stop_loss_prediction",
+        "source_feature_map": "shared_features",
+        "units": 1,
+        "activation": "linear"
+      },
+      {
+        "output_layer_name": "output_take_profit",
+        "maps_to_target_config_name": "take_profit_prediction",
+        "source_feature_map": "shared_features",
+        "units": 1,
+        "activation": "linear"
+      }
+    ]
+  },
+  "model_id": "base_from_M-000030",
+  "source_metadata": {
+    "source_run_id": "run_fresh_1",
+    "source_model_id": "M-000030",
+    "source_candidate_id": "cand_120cd1abe63a",
+    "decision_score": 1.9120865545509338,
+    "val_loss": 15.756230354309082,
+    "created_at": "2026-04-11T13:57:42Z",
+    "selection_reason": "best_of_day",
+    "family_key": "source:mdl_2f86e0f41199"
+  }
+}

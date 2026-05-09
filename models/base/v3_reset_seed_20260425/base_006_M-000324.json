@@ -1,0 +1,161 @@
+{
+  "model_id": "base_from_M-000324",
+  "version": "1.0.0",
+  "description": "Mutació conservadora de M-000313 que manté els tres inputs i les dues sortides, però prova una branca de full history una mica més expressiva i una fusió post-concatenació més compacta per veure si el coll d'ampolla és abans de la combinació final.",
+  "change_log": [
+    "Es mantenen els inputs validats del parent: prices_hist_full_800, extra_data_details i last_closing_price_feature.",
+    "Es mantenen les dues sortides obligatòries: stop_loss_prediction i take_profit_prediction.",
+    "Es reforça lleument la branca de full history per donar més capacitat al senyal principal sense canviar el tipus d'entrada ni afegir noves fonts de soroll.",
+    "Es manté la branca d'extra data compacta i estable, perquè ja és una part validada de la família.",
+    "Es simplifica la fusió respecte al parent amb una sola projecció post-concatenació, buscant una combinació més directa i menys restrictiva.",
+    "No s'afegeixen nous inputs ni nous caps de sortida per preservar la comparabilitat i la facilitat de smoke-fit.",
+    "Es conserva una configuració d'entrenament conservadora per prioritzar estabilitat i atribuïbilitat del canvi."
+  ],
+  "llm_reasoning": "La família mostra que els canvis petits i ben atribuïbles són els més segurs, i que el parent M-000313 és estable però encara té marge per millorar la mètrica de negoci. El millor model de la família anterior era més compacte, mentre que aquesta branca evolutiva vol comprovar la hipòtesi oposada: que el parent pot estar massa comprimit a la part principal de la seqüència i que una mica més de capacitat a full history pot ajudar a capturar millor el senyal útil per stop loss i take profit. Alhora, mantenim last_closing_price_feature perquè la família ja ha indicat que la recència és útil, però sense sobrecarregar-la amb més complexitat. La fusió simple evita introduir un segon factor de variabilitat i fa el test més net: si millora, el coll d'ampolla era probablement la compressió final; si no, la família ja haurà delimitat que el parent estava en un bon punt de compactació.",
+  "potential_next_variations": [
+    "Si millora, provar prices_hist_last_100 en lloc de last_closing_price_feature mantenint la mateixa fusió simple.",
+    "Si millora parcialment, reintroduir una segona capa petita post-fusió per buscar un punt intermedi de capacitat.",
+    "Si falla, tornar a la branca last price compacta del parent i provar només full_history + extra_data.",
+    "Si hi ha sobreajust, reduir la branca full_history abans de tocar la fusió."
+  ],
+  "seed": 42,
+  "architecture_definition": {
+    "used_inputs": [
+      {
+        "input_layer_name": "input_prices_full_800",
+        "source_feature_name": "prices_hist_full_800",
+        "shape": [
+          800
+        ]
+      },
+      {
+        "input_layer_name": "input_extra_data",
+        "source_feature_name": "extra_data_details",
+        "shape": [
+          9
+        ]
+      },
+      {
+        "input_layer_name": "input_last_price",
+        "source_feature_name": "last_closing_price_feature",
+        "shape": [
+          1
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "branch_full_history",
+        "input_source_layer": "input_prices_full_800",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 80,
+            "activation": "relu",
+            "name": "full_hist_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 40,
+            "activation": "relu",
+            "name": "full_hist_dense_2"
+          }
+        ],
+        "output_feature_map_name": "full_history_features"
+      },
+      {
+        "name": "branch_extra_data",
+        "input_source_layer": "input_extra_data",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 16,
+            "activation": "relu",
+            "name": "extra_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 8,
+            "activation": "relu",
+            "name": "extra_dense_2"
+          }
+        ],
+        "output_feature_map_name": "extra_features"
+      },
+      {
+        "name": "branch_last_price",
+        "input_source_layer": "input_last_price",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 16,
+            "activation": "relu",
+            "name": "last_price_dense_1"
+          }
+        ],
+        "output_feature_map_name": "last_price_features"
+      }
+    ],
+    "merges": [
+      {
+        "name": "fusion_main_aux",
+        "type": "concatenate",
+        "source_feature_maps": [
+          "full_history_features",
+          "extra_features",
+          "last_price_features"
+        ],
+        "layers_after_merge": [
+          {
+            "type": "Dense",
+            "units": 48,
+            "activation": "relu",
+            "name": "fusion_dense_1"
+          }
+        ],
+        "output_feature_map_name": "shared_features"
+      }
+    ],
+    "output_heads": [
+      {
+        "output_layer_name": "output_stop_loss",
+        "maps_to_target_config_name": "stop_loss_prediction",
+        "source_feature_map": "shared_features",
+        "units": 1,
+        "activation": "linear"
+      },
+      {
+        "output_layer_name": "output_take_profit",
+        "maps_to_target_config_name": "take_profit_prediction",
+        "source_feature_map": "shared_features",
+        "units": 1,
+        "activation": "linear"
+      }
+    ]
+  },
+  "training_config": {
+    "loss": "mean_squared_error",
+    "optimizer": "adam",
+    "learning_rate": 0.0005,
+    "batch_size": 1024,
+    "epochs": 500,
+    "validation_split": 0.15,
+    "early_stopping_patience": 15,
+    "reduce_lr_patience": 7,
+    "reduce_lr_factor": 0.5,
+    "min_lr": 1e-06,
+    "restore_best_weights": true,
+    "verbose": 0,
+    "cache_dtype": "float16"
+  },
+  "source_metadata": {
+    "source_run_id": "run_fresh_1",
+    "source_model_id": "M-000324",
+    "source_candidate_id": "cand_3d105e8c1f0b",
+    "decision_score": 0.788995657181422,
+    "val_loss": 13.61017894744873,
+    "created_at": "2026-04-14T16:41:21Z",
+    "selection_reason": "top_global",
+    "family_key": "parent:M-000313"
+  }
+}

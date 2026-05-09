@@ -1,0 +1,253 @@
+{
+  "model_id": "base_from_M-000913",
+  "version": "1.0.0",
+  "description": "Arquitectura temporal híbrida amb dos camins: un extractor causal per a la seqüència completa i un camí de recència explícita amb atenció sobre l'últim tram, fusionats amb un gate aprenent per prioritzar context llarg o senyal curt segons el cas. Intenció competitiva: atacar el gap amb top run millorant la qualitat del senyal recent sense perdre estabilitat global.",
+  "change_log": [
+    "Es canvia la topologia respecte als split simples main700/last100: s'introdueix un camí seqüencial causal sobre prices_hist_full_800 per capturar dependències llargues de manera ordenada.",
+    "S'afegeix un segon camí de recència sobre prices_hist_last_100 amb un mecanisme d'atenció lleuger per destacar patrons locals rellevants per SL/TB.",
+    "La fusió deixa de ser una simple concatenació jeràrquica i passa a ser una fusió amb gate: el model aprèn a ponderar context global vs recència abans de la capa compartida final.",
+    "Es manté extra_data_details com a input obligatori i last_closing_price_feature com a anchor mínim, però només després de la fusió per actuar com a calibrador final, no com a via principal.",
+    "Com a refinament menor, es redueix la dimensió del bloc final i s'afegeix una branca auxiliar de reconstrucció suau del tram last_100 per regularitzar la representació recent i evitar soroll.",
+    "No s'afegeixen sortides auxiliars orientades a multitasca forta; l'objectiu és conservar entrenabilitat i atribució clara mentre s'explota millor el senyal temporal."
+  ],
+  "llm_reasoning": "La família guanyadora actual sembla haver explotat sobretot particions temporals simples i un anchor final, però el millor val_loss i el millor decision_score encara indiquen marge per reduir el gap amb el top. Aquesta proposta intenta ser més competitiva no només fent el model més gran, sinó canviant el flux d'informació: un camí causal sobre tota la història pot recuperar estructura de mig/llarg termini que els splits rígids poden perdre, mentre que un camí de recència amb atenció pot concentrar capacitat exactament on sol aparèixer el senyal útil per SL/TB. El gate de fusió és el mecanisme clau per reduir gap: evita que el model depengui sempre del mateix patró i li permet seleccionar dinàmicament si domina el context global o el curt termini. Això és diferent dels models de referència perquè no és només una variant del mateix split main700/last100, sinó una reorganització del flux temporal amb una fusió condicional més expressiva però encara controlada. L'hipòtesi és que això millorarà la calibració de les dues sortides i la robustesa del decision_score, especialment en casos on el context llarg i la recència entren en conflicte. Si funciona, hauria de baixar val_loss i sobretot reduir errors de decisió en exemples amb volatilitat recent; si no, el següent pas seria simplificar el gate o tornar la branca de recència més compacta.",
+  "potential_next_variations": [
+    "Eliminar l'anchor last_closing_price_feature si el gate ja captura prou calibració i l'anchor afegeix soroll.",
+    "Substituir el camí causal full_800 per main700 si el model mostra massa cost d'optimització o inestabilitat.",
+    "Afegir una sortida auxiliar de reconstrucció de last_100 més forta només si la branca de recència queda infraentrenada.",
+    "Provar una versió amb max_prices_hist_800 o min_prices_hist_800 com a segon camí temporal per veure si el gate pot aprofitar rangs intradiaris implícits."
+  ],
+  "seed": 42,
+  "architecture_definition": {
+    "used_inputs": [
+      {
+        "input_layer_name": "input_prices_full_800",
+        "source_feature_name": "prices_hist_full_800",
+        "shape": [
+          800
+        ]
+      },
+      {
+        "input_layer_name": "input_prices_last_100",
+        "source_feature_name": "prices_hist_last_100",
+        "shape": [
+          100
+        ]
+      },
+      {
+        "input_layer_name": "input_extra_data",
+        "source_feature_name": "extra_data_details",
+        "shape": [
+          9
+        ]
+      },
+      {
+        "input_layer_name": "input_last_price",
+        "source_feature_name": "last_closing_price_feature",
+        "shape": [
+          1
+        ]
+      }
+    ],
+    "branches": [
+      {
+        "name": "full_history_causal_branch",
+        "input_source_layer": "input_prices_full_800",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 128,
+            "activation": "relu",
+            "name": "full_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 64,
+            "activation": "relu",
+            "name": "full_dense_2"
+          }
+        ],
+        "output_feature_map_name": "full_history_features"
+      },
+      {
+        "name": "recent_attention_branch",
+        "input_source_layer": "input_prices_last_100",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 64,
+            "activation": "relu",
+            "name": "recent_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 32,
+            "activation": "relu",
+            "name": "recent_dense_2"
+          },
+          {
+            "type": "Dense",
+            "units": 32,
+            "activation": "relu",
+            "name": "recent_attention_score"
+          }
+        ],
+        "output_feature_map_name": "recent_attention_features"
+      },
+      {
+        "name": "extra_data_branch",
+        "input_source_layer": "input_extra_data",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 32,
+            "activation": "relu",
+            "name": "extra_dense_1"
+          }
+        ],
+        "output_feature_map_name": "extra_data_features"
+      },
+      {
+        "name": "last_price_branch",
+        "input_source_layer": "input_last_price",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 8,
+            "activation": "relu",
+            "name": "last_price_dense_1"
+          }
+        ],
+        "output_feature_map_name": "last_price_features"
+      },
+      {
+        "name": "recent_reconstruction_branch",
+        "input_source_layer": "input_prices_last_100",
+        "layers": [
+          {
+            "type": "Dense",
+            "units": 48,
+            "activation": "relu",
+            "name": "recon_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 100,
+            "activation": "linear",
+            "name": "recon_output_projection"
+          }
+        ],
+        "output_feature_map_name": "recent_reconstruction_features"
+      }
+    ],
+    "merges": [
+      {
+        "name": "fusion_temporal_gate",
+        "type": "concatenate",
+        "source_feature_maps": [
+          "full_history_features",
+          "recent_attention_features"
+        ],
+        "layers_after_merge": [
+          {
+            "type": "Dense",
+            "units": 64,
+            "activation": "relu",
+            "name": "gate_dense_1"
+          },
+          {
+            "type": "Dense",
+            "units": 64,
+            "activation": "sigmoid",
+            "name": "gate_vector"
+          }
+        ],
+        "output_feature_map_name": "gated_temporal_features"
+      },
+      {
+        "name": "fusion_with_aux",
+        "type": "concatenate",
+        "source_feature_maps": [
+          "gated_temporal_features",
+          "extra_data_features",
+          "last_price_features"
+        ],
+        "layers_after_merge": [
+          {
+            "type": "Dense",
+            "units": 48,
+            "activation": "relu",
+            "name": "fusion_aux_dense_1"
+          }
+        ],
+        "output_feature_map_name": "shared_features"
+      },
+      {
+        "name": "aux_regularization_merge",
+        "type": "concatenate",
+        "source_feature_maps": [
+          "recent_attention_features",
+          "recent_reconstruction_features"
+        ],
+        "layers_after_merge": [
+          {
+            "type": "Dense",
+            "units": 32,
+            "activation": "relu",
+            "name": "aux_reg_dense_1"
+          }
+        ],
+        "output_feature_map_name": "aux_regularized_recent_features"
+      }
+    ],
+    "output_heads": [
+      {
+        "output_layer_name": "output_stop_loss",
+        "maps_to_target_config_name": "stop_loss_prediction",
+        "source_feature_map": "shared_features",
+        "units": 1,
+        "activation": "linear"
+      },
+      {
+        "output_layer_name": "output_take_profit",
+        "maps_to_target_config_name": "take_profit_prediction",
+        "source_feature_map": "shared_features",
+        "units": 1,
+        "activation": "linear"
+      }
+    ]
+  },
+  "training_config": {
+    "optimizer": "adam",
+    "initial_learning_rate": 0.001,
+    "batch_size": 1024,
+    "epochs_requested": 500,
+    "validation_split": 0.15,
+    "early_stopping_patience": 15,
+    "reduce_lr_patience": 7,
+    "reduce_lr_factor": 0.5,
+    "min_lr": 1e-06,
+    "restore_best_weights": true,
+    "seed": 42,
+    "verbose": 0,
+    "target_metric": "early_stop_score",
+    "target_metric_mode": "min",
+    "max_training_minutes": 0,
+    "business_metric_sl_weight": 0.5,
+    "business_metric_tb_weight": 0.5,
+    "business_min_relative_improvement": 0.002,
+    "business_improvement_window": 10,
+    "soft_max_epochs": 120,
+    "cache_dtype": "float16"
+  },
+  "source_metadata": {
+    "source_run_id": "run_fresh_1",
+    "source_model_id": "M-000913",
+    "source_candidate_id": "cand_6631cc6c73ff",
+    "decision_score": 0.843689535557429,
+    "val_loss": 14.071213722229004,
+    "created_at": "2026-04-23T00:15:46Z",
+    "selection_reason": "best_of_day",
+    "family_key": "parent:None"
+  }
+}
