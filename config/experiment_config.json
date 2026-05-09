@@ -75,7 +75,7 @@
     {
       "feature_name": "extra_data_details",
       "source_csv_key": "entrada_extra",
-      "total_columns": 9,
+      "total_columns": 8,
       "slice_params": null,
       "is_mandatory_input": true,
       "default_input_layer_name": "input_extra_data",

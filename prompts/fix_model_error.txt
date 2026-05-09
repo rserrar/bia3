@@ -22,6 +22,12 @@ available_inputs_description:
 available_outputs_description:
 {{available_outputs_description}}
 
+available_inputs_contract_json (EXACTE; usa aquests noms i shapes):
+{{available_inputs_contract_json}}
+
+available_outputs_contract_json (EXACTE; usa aquests targets, output_layer_name i units):
+{{available_outputs_contract_json}}
+
 ### Regles estrictes de repair
 1. Repara només la causa de l'error actual.
 2. Mantén `used_inputs` (noms i shapes) tret que l'error sigui exactament allà.
@@ -29,6 +35,7 @@ available_outputs_description:
 4. Mantén el nombre d'outputs i `maps_to_target_config_name`.
 5. No substitueixis tot el model per una variant genèrica Dense-only.
 6. Verifica que els shapes d'entrada siguin compatibles amb les dades reals.
+6b. Si hi ha dubte entre noms antics i nous, usa EXCLUSIVAMENT els noms d'`available_inputs_contract_json` i `available_outputs_contract_json`.
 7. Si cal simplificar, fes-ho mínimament mantenint l'estructura global.
 8. No facis servir claus legacy (`inputs`, `input_layers`, `shared_backbone`) dins `architecture_definition`.
 

@@ -274,6 +274,46 @@ def _outputs_description(experiment: dict[str, Any]) -> str:
     return "No output targets config available in experiment_config.json"
 
 
+def _inputs_contract_json(experiment: dict[str, Any]) -> str:
+    contract: list[dict[str, Any]] = []
+    items = experiment.get("input_features_config") if isinstance(experiment.get("input_features_config"), list) else []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        source = str(item.get("feature_name", "")).strip()
+        layer = str(item.get("default_input_layer_name", "")).strip()
+        cols = int(item.get("total_columns", 0) or 0)
+        if source and layer and cols > 0:
+            contract.append(
+                {
+                    "source_feature_name": source,
+                    "input_layer_name": layer,
+                    "shape": [cols],
+                }
+            )
+    return json.dumps(contract, ensure_ascii=False, indent=2) if contract else "[]"
+
+
+def _outputs_contract_json(experiment: dict[str, Any]) -> str:
+    contract: list[dict[str, Any]] = []
+    items = experiment.get("output_targets_config") if isinstance(experiment.get("output_targets_config"), list) else []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        target = str(item.get("target_name", "")).strip()
+        layer = str(item.get("default_output_layer_name", "")).strip()
+        cols = int(item.get("total_columns", 0) or 0)
+        if target and layer and cols > 0:
+            contract.append(
+                {
+                    "maps_to_target_config_name": target,
+                    "output_layer_name": layer,
+                    "units": cols,
+                }
+            )
+    return json.dumps(contract, ensure_ascii=False, indent=2) if contract else "[]"
+
+
 def _pick_working_model_example_json() -> str:
     repo_root = Path(__file__).resolve().parents[3]
     patterns = [
@@ -443,6 +483,8 @@ def repair_model_definition_via_openai(
         "working_model_example_json": _pick_working_model_example_json(),
         "available_inputs_description": _inputs_description(experiment),
         "available_outputs_description": _outputs_description(experiment),
+        "available_inputs_contract_json": _inputs_contract_json(experiment),
+        "available_outputs_contract_json": _outputs_contract_json(experiment),
         "architecture_guide_content": architecture_guide if architecture_guide.strip() else "No architecture guide content available",
     }
     prompt = _replace_prompt_placeholders(prompt_template, replacements)
