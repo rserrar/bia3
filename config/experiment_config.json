@@ -5,6 +5,7 @@
   "data_dir": "data/min",
   "data_paths": {
     "entrada_valors": "entrada_valors.csv",
+    "entrada_volum": "entrada_volum.csv",
     "entrada_extra": "entrada_extra.csv",
     "min_historics": "min.csv",
     "max_historics": "max.csv",
@@ -39,6 +40,15 @@
     "max_correction_attempts": 3
   },
   "input_features_config": [
+    {
+      "feature_name": "volume_hist_full_800",
+      "source_csv_key": "entrada_volum",
+      "total_columns": 800,
+      "slice_params": null,
+      "is_mandatory_input": false,
+      "default_input_layer_name": "input_volume_full_800",
+      "description": "Els 800 valors de volum normalitzat de la sequencia historica."
+    },
     {
       "feature_name": "prices_hist_full_800",
       "source_csv_key": "entrada_valors",
