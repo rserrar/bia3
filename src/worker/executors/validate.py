@@ -4,6 +4,7 @@ from typing import Any, cast
 from src.shared.settings import load_settings
 from .llm_client import normalize_llm_candidate_payload, repair_model_definition_via_openai
 from .data_pipeline_v2 import load_experiment_config
+from .model_definition_normalizer import normalize_model_definition_to_experiment
 from .model_runtime import run_smoke_fit_real_data
 from ..progress import report_progress
 
@@ -495,7 +496,7 @@ def execute_validate_candidate(payload: dict) -> dict:
 
     settings = load_settings()
     experiment = load_experiment_config(settings.experiment_config_file)
-    model_definition_full = _normalize_model_definition_to_experiment(model_definition_full, experiment)
+    model_definition_full = normalize_model_definition_to_experiment(model_definition_full, experiment)
     normalized_changed = model_definition_full != original_model_definition
 
     force_fail = bool(payload.get("force_fail", False))
@@ -556,7 +557,7 @@ def execute_validate_candidate(payload: dict) -> dict:
                 repaired_raw = normalized.get("model_definition_full")
                 repaired_full = cast(dict[str, Any], repaired_raw) if isinstance(repaired_raw, dict) else None
                 if repaired_full:
-                    repaired_full = _normalize_model_definition_to_experiment(repaired_full, experiment)
+                    repaired_full = normalize_model_definition_to_experiment(repaired_full, experiment)
                     repaired_schema_errors = validate_model_definition_schema(repaired_full)
                     if len(repaired_schema_errors) == 0 and not force_fail:
                         smoke_result = _run_runtime_validation(payload, repaired_full)

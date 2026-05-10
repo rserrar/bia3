@@ -3,6 +3,8 @@ import time
 from typing import Any
 
 from src.shared.settings import load_settings
+from .data_pipeline_v2 import load_experiment_config
+from .model_definition_normalizer import normalize_model_definition_to_experiment
 from .model_runtime import run_full_fit_real_data, render_model_plot_png_base64
 from ..progress import report_progress
 
@@ -69,6 +71,9 @@ def execute_train_continue(payload: dict) -> dict:
     training_history: dict[str, Any] = {}
     inline_artifacts: list[dict[str, Any]] = []
     model_definition_full = payload.get("model_definition_full") if isinstance(payload.get("model_definition_full"), dict) else {}
+    if model_definition_full:
+        experiment = load_experiment_config(settings.experiment_config_file)
+        model_definition_full = normalize_model_definition_to_experiment(dict(model_definition_full), experiment)
     report_progress({"phase": "train_continue_started", "parent_model_id": parent_model_id})
     if model_definition_full:
         try:
@@ -189,6 +194,8 @@ def execute_train_continue(payload: dict) -> dict:
         "revision": int(payload.get("revision", 1) or 1) + 1,
         "resumed": True,
     }
+    if model_definition_full:
+        result["model_definition_full"] = model_definition_full
     if plot_png_base64:
         result["plot_model_png_base64"] = plot_png_base64
     if training_history:
