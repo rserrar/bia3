@@ -1146,9 +1146,46 @@ def _prepare_real_fit_context(
     input_cfg_raw = input_cfg_value if isinstance(input_cfg_value, list) else []
     output_cfg_raw = output_cfg_value if isinstance(output_cfg_value, list) else []
     data_paths_raw = data_paths_value if isinstance(data_paths_value, dict) else {}
-    input_cfg = [item for item in input_cfg_raw if isinstance(item, dict)]
-    output_cfg = [item for item in output_cfg_raw if isinstance(item, dict)]
+    input_cfg_all = [item for item in input_cfg_raw if isinstance(item, dict)]
+    output_cfg_all = [item for item in output_cfg_raw if isinstance(item, dict)]
     data_paths = {str(k): v for k, v in data_paths_raw.items()}
+
+    arch_raw = model_definition_full.get("architecture_definition")
+    arch: dict[str, Any] = arch_raw if isinstance(arch_raw, dict) else {}
+    used_inputs_value = arch.get("used_inputs", [])
+    output_heads_value = arch.get("output_heads", [])
+    used_inputs_raw = used_inputs_value if isinstance(used_inputs_value, list) else []
+    output_heads_raw = output_heads_value if isinstance(output_heads_value, list) else []
+    used_inputs = [item for item in used_inputs_raw if isinstance(item, dict)]
+    output_heads = [item for item in output_heads_raw if isinstance(item, dict)]
+
+    used_input_sources = {
+        str(item.get("source_feature_name", "")).strip()
+        for item in used_inputs
+        if str(item.get("source_feature_name", "")).strip() != ""
+    }
+    if used_input_sources:
+        input_cfg = [
+            item
+            for item in input_cfg_all
+            if str(item.get("feature_name", "")).strip() in used_input_sources
+        ]
+    else:
+        input_cfg = input_cfg_all
+
+    used_targets = {
+        str(item.get("maps_to_target_config_name", "")).strip()
+        for item in output_heads
+        if str(item.get("maps_to_target_config_name", "")).strip() != ""
+    }
+    if used_targets:
+        output_cfg = [
+            item
+            for item in output_cfg_all
+            if str(item.get("target_name", "")).strip() in used_targets
+        ]
+    else:
+        output_cfg = output_cfg_all
 
     raw = load_all_raw_data_sources(
         data_paths,
@@ -1170,15 +1207,6 @@ def _prepare_real_fit_context(
 
     input_dims_map: dict[str, int] = {}
     output_units_map: dict[str, int] = {}
-
-    arch_raw = model_definition_full.get("architecture_definition")
-    arch: dict[str, Any] = arch_raw if isinstance(arch_raw, dict) else {}
-    used_inputs_value = arch.get("used_inputs", [])
-    output_heads_value = arch.get("output_heads", [])
-    used_inputs_raw = used_inputs_value if isinstance(used_inputs_value, list) else []
-    output_heads_raw = output_heads_value if isinstance(output_heads_value, list) else []
-    used_inputs = [item for item in used_inputs_raw if isinstance(item, dict)]
-    output_heads = [item for item in output_heads_raw if isinstance(item, dict)]
 
     output_cfg_map: dict[str, int] = {}
     output_alias_to_target: dict[str, str] = {}
