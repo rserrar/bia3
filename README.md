@@ -26,6 +26,8 @@ Repositori minim per executar workers Colab contra l'API V3.
         - `V3_NON_FINITE_SAMPLE_COLS=12` (quantes columnes mostrar del registre conflictiu)
         - `V3_NON_FINITE_SAMPLE_ROWS=3` (quantes files veïnes mostrar)
         - `V3_DATA_CACHE_DTYPE=float16` (opcional per reduir RAM/cache)
+        - `V3_WORKER_TASK_TYPES=train_model,train_continue` per quaderns T4 dedicats a entrenament
+        - `V3_WORKER_TASK_TYPES=generate_candidate,validate_candidate,recommend_train_continue` per quaderns CPU/altres GPUs
        - `V3_USE_MEMMAP_CACHE=true` (recomanat)
        - posar CSVs segons `config/experiment_config.json` (`data_paths`)
 3. Executa:

@@ -10,6 +10,7 @@ class Settings:
     dataset_profile_id: str
     worker_poll_seconds: int
     worker_heartbeat_seconds: int
+    worker_task_types: tuple[str, ...]
     llm_mode: str
     llm_api_key: str
     llm_model: str
@@ -56,6 +57,15 @@ class Settings:
 
 
 def load_settings() -> Settings:
+    raw_task_types = os.getenv(
+        "V3_WORKER_TASK_TYPES",
+        "generate_candidate,validate_candidate,train_model,train_continue,recommend_train_continue",
+    )
+    task_types = tuple(
+        task.strip()
+        for task in raw_task_types.split(",")
+        if task.strip() != ""
+    )
     return Settings(
         api_base_url=os.getenv("V3_API_BASE_URL", "http://127.0.0.1:8090"),
         worker_id=os.getenv("V3_WORKER_ID", "worker-local-1"),
@@ -63,6 +73,7 @@ def load_settings() -> Settings:
         dataset_profile_id=os.getenv("V3_DATASET_PROFILE_ID", "default"),
         worker_poll_seconds=int(os.getenv("V3_WORKER_POLL_SECONDS", "5")),
         worker_heartbeat_seconds=max(15, int(os.getenv("V3_WORKER_HEARTBEAT_SECONDS", "60") or 60)),
+        worker_task_types=task_types,
         llm_mode=os.getenv("V3_LLM_MODE", "off"),
         llm_api_key=os.getenv("V3_OPENAI_API_KEY", ""),
         llm_model=os.getenv("V3_OPENAI_MODEL", "gpt-4o-mini"),

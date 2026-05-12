@@ -91,13 +91,7 @@ def run_worker_loop() -> None:
         "worker_version": settings.worker_version,
         "dataset_profile_id": settings.dataset_profile_id,
         "capabilities": {
-            "tasks": [
-                "generate_candidate",
-                "validate_candidate",
-                "train_model",
-                "train_continue",
-                "recommend_train_continue",
-            ]
+            "tasks": list(settings.worker_task_types),
         },
     }
 
@@ -114,6 +108,9 @@ def run_worker_loop() -> None:
                 {
                     "worker_id": settings.worker_id,
                     "dataset_profile_id": settings.dataset_profile_id,
+                    "capabilities": {
+                        "tasks": list(settings.worker_task_types),
+                    },
                 }
             )
             action = str(claim.get("action", "wait"))
