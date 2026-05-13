@@ -36,6 +36,13 @@ available_outputs_description:
 6. Si dubtes d'schema o consistència, simplifica; si dubtes de competitivitat, escull el refinament amb més potencial explicable.
 7. Si una proposta implica salt arquitectònic fort, NO és evolution: reconduir-la a mutació incremental.
 
+### Procés mental recomanat
+1. Llegeix primer el `parent_model`, `family_models`, `family_metrics_summary` i `genealogy_case_studies` abans de dissenyar res.
+2. Formula una hipòtesi principal breu i atribuïble: quin canvi hauria de millorar SL/TB o decision_score.
+3. Decideix explícitament què mantens del parent perquè ja funciona, i què canvies perquè sospites que és el coll d'ampolla.
+4. Dissenya la mutació més petita possible que permeti validar aquesta hipòtesi.
+5. Abans de retornar, revisa si el JSON final ajuda una futura generació a entendre què s'ha provat i com continuar l'experiment.
+
 ### Camps obligatoris de context experimental
 Has de retornar aquests camps dins `model_definition_full`:
 - `model_id`
@@ -53,6 +60,15 @@ Has de retornar aquests camps dins `model_definition_full`:
 - `change_log`: llista de canvis específics respecte al parent o millor fill de referència.
 - `llm_reasoning`: quina hipòtesi vols comprovar, què esperes millorar, mecanisme competitiu esperat (gap champion/top family) i per què la mutació és coherent amb la història de la família.
 - `potential_next_variations`: 2-4 següents mutacions lògiques si aquest experiment funciona o falla parcialment.
+
+### Memòria per a futures generacions (MOLT IMPORTANT)
+El que escrius a `change_log`, `llm_reasoning`, `potential_next_variations` i `model_definition_summary` servirà de guia per a futures mutacions de la família.
+Per tant:
+- explica el canvi de manera concreta i reutilitzable, no genèrica
+- deixa clar quin senyal vols aprofitar (`SL`, `TB`, recència, rang, volum, etc.)
+- deixa clar quina continuació seria lògica si el resultat és bo
+- deixa clar quina simplificació o correcció provaries si el resultat és dolent
+- evita frases vagues com "millora general" o "més capacitat" sense mecanisme causal
 
 ### model_definition_summary obligatori
 `model_definition_summary` ha de ser un objecte curt però útil amb aquests camps obligatoris:
@@ -75,6 +91,11 @@ Has d'explicar implícitament en `change_log`, `llm_reasoning` i `model_definiti
 - què no canvies perquè ja funciona,
 - què vols validar amb aquesta mutació,
 - quines serien les següents variants si els resultats són bons o dolents.
+
+Si `family_models` és buit o molt petit, tracta-ho com a família poc explorada:
+- aprofita especialment el `parent_model` i `genealogy_case_studies`
+- proposa una mutació conservadora però informativa
+- fes que `potential_next_variations` sigui especialment útil per construir memòria experimental a partir d'aquest primer fill
 
 ### Guardrails d'arquitectura
 - `architecture_definition` obligatori.
@@ -159,7 +180,8 @@ Verifica internament:
 - que la proposta justifica explícitament com intenta reduir gap amb champion/top family
 
 ### Sortida (OBLIGATÒRIA)
-Return ONLY one valid JSON object. Do not include any extra text.
+Return a SINGLE valid JSON object (not an array, not a list). Do NOT wrap in `[]`.
+Never prefix or suffix with any text, explanation, or code markers.
 Before returning, validate that the response is valid JSON and parseable.
 
 ```json
