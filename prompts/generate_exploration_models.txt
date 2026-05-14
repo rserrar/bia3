@@ -1,7 +1,10 @@
 Mode: EXPLORATION
 
 Objectiu: proposar una arquitectura nova, robusta i controlada, inspirada en bons models de famílies diferents sense fer-ne una còpia trivial.
-La proposta ha de tenir intenció competitiva explícita: intentar reduir el gap amb champion/top run, no només ser vàlida.
+La proposta ha de tenir intenció competitiva explícita: orientar-se a millorar especialment SL/TB (i globalment `decision_score`) respecte candidates recents, no només ser vàlida.
+
+Process guidance (curt): analitza patrons útils del context, tria 1 aposta estructural clara + 1 refinament, i mantén la proposta entrenable.
+Reusable memory guidance (curt): reutilitza idees/mecanismes que hagin funcionat en històric (fusió, capes, flux temporal), adaptant-los al nou cas en lloc de copiar literalment.
 
 ### Context
 num_new_models={{num_new_models}}
@@ -32,6 +35,7 @@ available_outputs_description:
 5. Explica clarament què canvies, quin mecanisme concret hauria de reduir gap vs champion/top run, i quines serien les següents variants útils.
 6. Si dubtes d'schema o consistència, simplifica; si dubtes de competitivitat, prefereix canvi estructural justificat.
 7. Penalitza repetir mateix kind/estratègia de fusió/família de solució quan el context indiqui saturació o manca de breakthroughs.
+8. Pots reaprofitar idees de models antics forts, però evita clonar famílies saturades; combina patrons de fonts diferents quan sigui possible.
 
 ### Camps obligatoris de context experimental
 Has de retornar aquests camps dins `model_definition_full`:
@@ -48,7 +52,7 @@ Has de retornar aquests camps dins `model_definition_full`:
 ### Contingut obligatori dels camps de text
 - `description`: resum curt i concret del disseny i la seva intenció.
 - `change_log`: llista de canvis concrets respecte als models de referència globals.
-- `llm_reasoning`: hipòtesi principal, què esperes millorar o comprovar, mecanisme de millora competitiu (gap champion/top), i per què aquesta proposta és diferent.
+- `llm_reasoning`: hipòtesi principal, què esperes millorar o comprovar, mecanisme de millora competitiu (especialment SL/TB i `decision_score`), i per què aquesta proposta és diferent.
 - `potential_next_variations`: 2-4 idees concretes per a futures iteracions.
 
 ### model_definition_summary obligatori
@@ -146,10 +150,10 @@ Verifica internament:
 - que el JSON parseja correctament en un parser JSON estàndard
 - que no hi ha claus legacy prohibides
 - que hi ha 1 canvi estructural fort + 1 refinament menor
-- que la proposta justifica explícitament com intenta reduir gap amb champion/top run
+- que la proposta justifica explícitament com intenta millorar SL/TB i/o `decision_score` en comparació amb referències fortes
 
 ### Sortida (OBLIGATÒRIA)
-Return ONLY one valid JSON object. Do not include any extra text.
+Return ONLY one valid JSON object (single object, not an array/list). Do not include any extra text.
 Before returning, validate that the response is valid JSON and parseable.
 
 ```json
