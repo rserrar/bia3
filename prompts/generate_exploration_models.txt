@@ -32,7 +32,7 @@ available_outputs_description:
 2. EXPLORATION ha d'incloure obligatòriament un novelty budget: almenys 1 canvi estructural fort + 1 canvi menor de refinament.
 3. Canvi estructural fort vol dir canvi de topologia/flux (ex: nova estratègia de fusió, nova organització de branques, nou camí temporal o mecanisme d'atenció). Canvis de units/dropout/lr sols NO compten.
 4. Prioritza arquitectures entrenables i estables, però evita propostes només "safe" si no aporten potencial competitiu.
-5. Explica clarament què canvies, quin mecanisme concret hauria de reduir gap vs champion/top run, i quines serien les següents variants útils.
+5. Explica clarament què canvies, quin mecanisme concret hauria d'ajudar a millorar SL/TB i/o `decision_score` versus referències fortes, i quines serien les següents variants útils.
 6. Si dubtes d'schema o consistència, simplifica; si dubtes de competitivitat, prefereix canvi estructural justificat.
 7. Penalitza repetir mateix kind/estratègia de fusió/família de solució quan el context indiqui saturació o manca de breakthroughs.
 8. Pots reaprofitar idees de models antics forts, però evita clonar famílies saturades; combina patrons de fonts diferents quan sigui possible.
