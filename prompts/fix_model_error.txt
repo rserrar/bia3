@@ -90,7 +90,7 @@ Verifica internament:
 - que no hi ha claus legacy prohibides
 
 ### Sortida (OBLIGATÒRIA)
-Return ONLY valid JSON. Do not include any extra text.
+Return ONLY one valid JSON object (single object, not an array/list). Do not include any extra text.
 Before returning, validate that the response is valid JSON and parseable.
 
 Resposta amb exactament aquestes claus de primer nivell:

@@ -31,7 +31,7 @@ available_outputs_description:
 1. El parent model és la base: no redisseny total.
 2. Canvis incrementals, justificats i fàcils d'atribuir; màxim 1 canvi estructural menor i 1-2 refinaments.
 3. Evita repetir patrons de la família sense variació real, especialment si el context mostra saturació sense breakthrough.
-4. Explica clarament què canvies respecte al parent, quin mecanisme concret hauria de reduir gap vs champion/top family, i quines serien les següents variants.
+4. Explica clarament què canvies respecte al parent, quin mecanisme concret hauria d'ajudar a millorar SL/TB i/o `decision_score` versus referències fortes de família, i quines serien les següents variants.
 5. Prioritza estabilitat build/compile/smoke-fit.
 6. Si dubtes d'schema o consistència, simplifica; si dubtes de competitivitat, escull el refinament amb més potencial explicable.
 7. Si una proposta implica salt arquitectònic fort, NO és evolution: reconduir-la a mutació incremental.
@@ -58,7 +58,7 @@ Has de retornar aquests camps dins `model_definition_full`:
 ### Contingut obligatori dels camps de text
 - `description`: resum curt de la mutació respecte al parent.
 - `change_log`: llista de canvis específics respecte al parent o millor fill de referència.
-- `llm_reasoning`: quina hipòtesi vols comprovar, què esperes millorar, mecanisme competitiu esperat (gap champion/top family) i per què la mutació és coherent amb la història de la família.
+- `llm_reasoning`: quina hipòtesi vols comprovar, què esperes millorar, mecanisme competitiu esperat (especialment SL/TB i `decision_score`) i per què la mutació és coherent amb la història de la família.
 - `potential_next_variations`: 2-4 següents mutacions lògiques si aquest experiment funciona o falla parcialment.
 
 ### Memòria per a futures generacions (MOLT IMPORTANT)
@@ -177,7 +177,7 @@ Verifica internament:
 - que el JSON parseja correctament en un parser JSON estàndard
 - que no hi ha claus legacy prohibides
 - que la mutació és realment incremental (no redisseny fort)
-- que la proposta justifica explícitament com intenta reduir gap amb champion/top family
+- que la proposta justifica explícitament com intenta millorar SL/TB i/o `decision_score` en comparació amb referències fortes de família
 
 ### Sortida (OBLIGATÒRIA)
 Return a SINGLE valid JSON object (not an array, not a list). Do NOT wrap in `[]`.

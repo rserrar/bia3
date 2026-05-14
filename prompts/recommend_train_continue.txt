@@ -1,6 +1,7 @@
 Mode: TRAIN_CONTINUE_RECOMMENDATION
 
 Objectiu: decidir si val la pena continuar entrenant un model existent, aturar-lo o provar una nova variant, i proposar una configuracio de training realista.
+Prioritza millores en SL/TB i `decision_score`; usa `val_loss`/`val_mae` com a senyal secundari d'estabilitat i generalitzacio.
 
 ### Context
 model_overview:
@@ -77,7 +78,7 @@ Return ONLY one valid JSON object with exactly these top-level keys:
 - `expected_cost`: `low|medium|high`
 - `confidence`: `low|medium|high`
 - `recommended_training_config`: objecte parcial o complet, nomes amb camps del trainer permesos
-- `success_criteria.target_metric`: una metrica coneguda (`val_loss`, `val_mae`, etc.)
+- `success_criteria.target_metric`: una metrica coneguda (`decision_score`, `val_loss`, `val_mae`, etc.)
 - `success_criteria.target_metric_mode`: `min|max`
 
 ### Interpretacio recomanada
