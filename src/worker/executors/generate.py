@@ -198,7 +198,7 @@ def _normalize_architecture_aliases(model_full: dict[str, Any]) -> None:
             merge["layers_after_merge"] = merge.get("layers")
 
 
-def _build_prompt_context_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
+def _build_prompt_context_from_payload(payload: dict[str, Any], target_candidates: int = 1) -> dict[str, Any]:
     settings = load_settings()
     mode = str(payload.get("generation_mode", "exploration")).strip().lower() or "exploration"
     prompt_context = _as_dict(payload.get("prompt_context"))
@@ -218,10 +218,8 @@ def _build_prompt_context_from_payload(payload: dict[str, Any]) -> dict[str, Any
     if architecture_guide_content == "":
         architecture_guide_content = _read_text_if_exists(settings.architecture_guide_file)
 
-    target_candidates = 1
-
     context: dict[str, Any] = {
-        "num_new_models": str(target_candidates),
+        "num_new_models": str(max(1, target_candidates)),
         "available_inputs_description": available_inputs_description,
         "available_outputs_description": available_outputs_description,
         "architecture_guide_content": architecture_guide_content,
@@ -703,13 +701,15 @@ def execute_generate_candidate(payload: dict) -> dict:
     if template_text.strip() == "":
         template_text = _default_template_for_mode(mode)
 
-    prompt_context = _build_prompt_context_from_payload(payload)
+    target = int(payload.get("target_candidates", 1) or 1)
+    prompt_context = _build_prompt_context_from_payload(payload, target_candidates=target)
     prompt_text, unresolved = _render_prompt_template(template_text, prompt_context)
 
     print(f"[GEN] mode={mode}", flush=True)
     print(f"[GEN] using template={template_file}", flush=True)
     print(f"[GEN] context keys={','.join(sorted(prompt_context.keys()))}", flush=True)
     print(f"[GEN] prompt size={len(prompt_text)}", flush=True)
+    print(f"[GEN] target_candidates={target}", flush=True)
     if unresolved:
         print(f"[GEN][WARN] unresolved placeholders={','.join(unresolved)}", flush=True)
 
@@ -717,10 +717,17 @@ def execute_generate_candidate(payload: dict) -> dict:
     nested_context = _as_dict(payload.get("prompt_context"))
     effective_context.update(nested_context)
 
-    target = int(payload.get("target_candidates", 1) or 1)
     parent_model_id = _extract_parent_model_id(payload)
     report_progress({"phase": "generate_started", "target_candidates": max(1, target), "mode": mode})
     candidates = []
+
+    if target > 1:
+        batch_out = _try_batch_generate(target, effective_context, prompt_text, mode, template_file, parent_model_id)
+        if batch_out is not None:
+            candidates = batch_out
+            report_progress({"phase": "generate_completed", "count": len(candidates), "mode": mode, "batch": True})
+            return {"status": "completed", "candidates": candidates}
+
     for idx in range(max(1, target)):
         report_progress({"phase": "generate_candidate_request", "index": idx + 1, "total": max(1, target), "mode": mode})
         candidate_id = f"cand_{uuid4().hex[:12]}"
@@ -773,3 +780,106 @@ def execute_generate_candidate(payload: dict) -> dict:
         report_progress({"phase": "generate_candidate_done", "index": idx + 1, "total": max(1, target), "candidate_id": candidate_id})
     report_progress({"phase": "generate_completed", "count": len(candidates), "mode": mode})
     return {"status": "completed", "candidates": candidates}
+
+
+def _try_batch_generate(
+    target: int,
+    context: dict[str, Any],
+    prompt_text: str,
+    mode: str,
+    template_file: str,
+    parent_model_id: str | None,
+) -> list[dict[str, Any]] | None:
+    settings = load_settings()
+    if settings.llm_mode != "openai_chat" or settings.llm_api_key.strip() == "":
+        return None
+    report_progress({"phase": "generate_batch_request", "target": target, "mode": mode})
+    try:
+        payload = generate_candidate_via_openai(
+            api_key=settings.llm_api_key,
+            model=settings.llm_model,
+            prompt=prompt_text,
+            endpoint=settings.llm_endpoint,
+        )
+    except Exception:
+        print(f"[GEN] batch LLM call failed, falling back to per-candidate", flush=True)
+        return None
+
+    payload_meta = payload if isinstance(payload, dict) else {}
+    candidates_raw = None
+    parsed = payload_meta.get("_llm_parsed_payload")
+    if isinstance(parsed, list):
+        candidates_raw = parsed
+    elif isinstance(parsed, dict):
+        inner = parsed.get("candidates")
+        if isinstance(inner, list):
+            candidates_raw = inner
+        else:
+            candidates_raw = [parsed]
+
+    if not isinstance(candidates_raw, list) or len(candidates_raw) == 0:
+        return None
+
+    result: list[dict[str, Any]] = []
+    for item in candidates_raw[:target]:
+        if not isinstance(item, dict):
+            continue
+        cid = f"cand_{uuid4().hex[:12]}"
+        candidate = _build_single_candidate_from_payload(cid, item, payload_meta, mode, template_file, parent_model_id)
+        if candidate is not None:
+            result.append(candidate)
+
+    if len(result) == 0:
+        return None
+    return result
+
+
+def _build_single_candidate_from_payload(
+    candidate_id: str,
+    raw_item: dict[str, Any],
+    payload_meta: dict[str, Any],
+    mode: str,
+    template_file: str,
+    parent_model_id: str | None,
+) -> dict[str, Any] | None:
+    normalized = normalize_llm_candidate_payload(raw_item)
+    full = normalized.get("model_definition_full") if isinstance(normalized.get("model_definition_full"), dict) else None
+    summary = normalized.get("model_definition_summary") if isinstance(normalized.get("model_definition_summary"), dict) else None
+
+    if full is None:
+        if isinstance(raw_item.get("model_definition_full"), dict):
+            full = raw_item.get("model_definition_full")
+    if full is None:
+        return None
+
+    _normalize_architecture_aliases(full)
+    arch = _as_dict(full.get("architecture_definition"))
+    if not arch or not _as_list_of_dicts(arch.get("used_inputs")) or not _as_list_of_dicts(arch.get("output_heads")):
+        return None
+
+    if not isinstance(summary, dict) or len(summary) == 0:
+        summary = _summarize_model_definition(full)
+
+    llm_trace_raw = payload_meta.get("_llm_trace")
+    llm_metadata = {
+        "provider": "openai_chat",
+        "generation_mode": mode,
+        "template_file": template_file,
+        "model": payload_meta.get("_llm_model", ""),
+        "endpoint": payload_meta.get("_llm_endpoint", ""),
+        "prompt_text": payload_meta.get("_llm_prompt_text", ""),
+        "response_text": payload_meta.get("_llm_response_text", ""),
+        "raw_response": payload_meta.get("_llm_raw_response", {}),
+        "llm_trace": llm_trace_raw if isinstance(llm_trace_raw, dict) else None,
+    }
+    training_config = full.pop("training_config", None) if full else None
+
+    return {
+        "candidate_id": candidate_id,
+        "fingerprint": uuid4().hex,
+        "model_definition_full": full,
+        "model_definition_summary": summary,
+        "llm_metadata": llm_metadata,
+        "parent_model_id": parent_model_id,
+        "training_config": training_config,
+    }

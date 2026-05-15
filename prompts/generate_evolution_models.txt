@@ -201,7 +201,9 @@ Verifica internament:
 - que la proposta justifica explícitament com intenta millorar SL/TB i/o `decision_score` en comparació amb referències fortes de família
 
 ### Sortida (OBLIGATÒRIA)
-Return a SINGLE valid JSON object (not an array, not a list). Do NOT wrap in `[]`.
+Return ONLY valid JSON. Do not include any extra text.
+If num_new_models = 1, return a single JSON object.
+If num_new_models > 1, return a JSON array of exactly num_new_models objects.
 Never prefix or suffix with any text, explanation, or code markers.
 Before returning, validate that the response is valid JSON and parseable.
 
