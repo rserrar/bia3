@@ -813,10 +813,12 @@ def _try_batch_generate(
     payload_meta = payload if isinstance(payload, dict) else {}
     candidates_raw = None
     parsed = payload_meta.get("_llm_parsed_payload")
+    print(f"[GEN] batch response type={type(parsed).__name__}", flush=True)
     if isinstance(parsed, list):
         candidates_raw = parsed
         print(f"[GEN] batch response: array of {len(parsed)} items", flush=True)
     elif isinstance(parsed, dict):
+        print(f"[GEN] batch response keys: {list(parsed.keys())[:10]}", flush=True)
         inner = parsed.get("candidates")
         if isinstance(inner, list):
             candidates_raw = inner
