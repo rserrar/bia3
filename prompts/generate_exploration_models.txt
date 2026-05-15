@@ -49,6 +49,27 @@ Has de retornar aquests camps dins `model_definition_full`:
 - `architecture_definition`
 - `training_config`
 
+### Camps permesos dins `training_config`
+- `batch_size` (int): mostres per gradient step
+- `epochs` (int): nombre maxim d'epochs
+- `validation_split` (float): fraccio per validacio
+- `early_stopping_patience` (int): epochs sense millora per parar
+- `reduce_lr_patience` (int): epochs sense millora per reduir lr
+- `reduce_lr_factor` (float): factor de reduccio de lr
+- `min_lr` (float): lr minim
+- `restore_best_weights` (bool): restaurar millors pesos
+- `initial_learning_rate` (float): lr inicial
+- `optimizer` (string): nom de l'optimitzador
+- `seed` (int): llavor aleatoria
+- `target_metric` (string): metrica per early stopping
+- `target_metric_mode` (string): min o max
+- `max_training_minutes` (int): temps maxim d'entrenament
+- `soft_max_epochs` (int): cap maxima d'epochs (soft)
+- `business_metric_sl_weight` (float): pes SL a la metrica de negoci
+- `business_metric_tb_weight` (float): pes TB a la metrica de negoci
+- `business_min_relative_improvement` (float): millora minima relativa
+- `business_improvement_window` (int): finestra per estancament
+
 ### Contingut obligatori dels camps de text
 - `description`: resum curt i concret del disseny i la seva intenció.
 - `change_log`: llista de canvis concrets respecte als models de referència globals.
@@ -167,7 +188,12 @@ Before returning, validate that the response is valid JSON and parseable.
     "potential_next_variations": ["...", "..."],
     "seed": 42,
     "architecture_definition": {},
-    "training_config": {}
+    "training_config": {
+      "batch_size": 1024,
+      "epochs": 500,
+      "initial_learning_rate": 0.001,
+      "early_stopping_patience": 10
+    }
   },
   "model_definition_summary": {
     "kind": "...",
