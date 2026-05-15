@@ -15,6 +15,7 @@ class Settings:
     llm_api_key: str
     llm_model: str
     llm_endpoint: str
+    llm_deepseek_thinking: bool
     prompt_template_file: str
     architecture_guide_file: str
     experiment_config_file: str
@@ -78,6 +79,7 @@ def load_settings() -> Settings:
         llm_api_key=os.getenv("V3_OPENAI_API_KEY", ""),
         llm_model=os.getenv("V3_OPENAI_MODEL", "gpt-4o-mini"),
         llm_endpoint=os.getenv("V3_OPENAI_ENDPOINT", "https://api.openai.com/v1/chat/completions"),
+        llm_deepseek_thinking=os.getenv("V3_DEEPSEEK_THINKING", "false").lower() in {"1", "true", "yes"},
         prompt_template_file=os.getenv("V3_LLM_PROMPT_TEMPLATE_FILE", "prompts/generate_exploration_models.txt"),
         architecture_guide_file=os.getenv("V3_LLM_ARCHITECTURE_GUIDE_FILE", "prompts/instruccions.md"),
         experiment_config_file=os.getenv("V3_LLM_EXPERIMENT_CONFIG_FILE", "config/experiment_config.json"),

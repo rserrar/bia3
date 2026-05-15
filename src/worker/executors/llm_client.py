@@ -365,8 +365,17 @@ def _replace_prompt_placeholders(prompt_template: str, replacements: dict[str, s
 
 
 def generate_candidate_via_openai(api_key: str, model: str, prompt: str, endpoint: str) -> dict[str, Any]:
+    from src.shared.settings import load_settings
+    settings = load_settings()
+    is_deepseek = 'deepseek' in model.lower()
+    thinking_enabled = is_deepseek and settings.llm_deepseek_thinking
+
     llm_trace = _base_llm_trace(model=model, endpoint=endpoint, prompt=prompt)
+    if is_deepseek:
+        llm_trace["provider"] = "deepseek"
     print(f"[INFO] LLM request -> endpoint={endpoint} model={model}", flush=True)
+    if thinking_enabled:
+        print(f"[INFO] DeepSeek thinking mode enabled", flush=True)
     print(f"[LLM] prompt size={len(str(prompt))}", flush=True)
     body = {
         "model": model,
@@ -377,9 +386,13 @@ def generate_candidate_via_openai(api_key: str, model: str, prompt: str, endpoin
             },
             {"role": "user", "content": prompt},
         ],
-        "temperature": 0.7,
         "response_format": {"type": "json_object"},
     }
+    if thinking_enabled:
+        body["thinking"] = {"type": "enabled"}
+        body["reasoning_effort"] = "high"
+    else:
+        body["temperature"] = 0.7
     data = json.dumps(body, ensure_ascii=False).encode("utf-8")
     req = urlrequest.Request(
         url=endpoint,
