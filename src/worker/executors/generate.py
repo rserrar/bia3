@@ -767,6 +767,7 @@ def execute_generate_candidate(payload: dict) -> dict:
                 "model_definition_summary": model_summary,
                 "llm_metadata": llm_metadata,
                 "parent_model_id": parent_model_id,
+                "training_config": (model_full or {}).pop("training_config", None) if model_full else None,
             }
         )
         report_progress({"phase": "generate_candidate_done", "index": idx + 1, "total": max(1, target), "candidate_id": candidate_id})

@@ -189,6 +189,11 @@ def normalize_llm_training_recommendation(payload: dict | list) -> dict[str, Any
         "target_metric",
         "target_metric_mode",
         "max_training_minutes",
+        "soft_max_epochs",
+        "business_metric_sl_weight",
+        "business_metric_tb_weight",
+        "business_min_relative_improvement",
+        "business_improvement_window",
     }
     filtered_recommended = {str(k): v for k, v in recommended.items() if str(k) in allowed}
 

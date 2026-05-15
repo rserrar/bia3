@@ -60,12 +60,27 @@ def _resolve_training_config(payload: dict[str, Any], settings: Any) -> dict[str
     }
 
 
-def execute_train_model(payload: dict) -> dict:
+def execute_train(payload: dict) -> dict:
+    is_continue = str(payload.get("candidate_id", "")).strip() == "" and str(payload.get("parent_model_id", "")).strip() != ""
     started_at = time.time()
     settings = load_settings()
     resolved = _resolve_training_config(payload, settings)
-    candidate_id = str(payload.get("candidate_id", "")).strip() or "unknown"
-    model_id = f"mdl_{uuid4().hex[:12]}"
+
+    if is_continue:
+        parent_model_id = str(payload.get("parent_model_id", "")).strip() or "unknown_parent"
+        model_id = f"mdl_{uuid4().hex[:12]}"
+        candidate_id = str(payload.get("candidate_id", "")).strip()
+        model_ref = parent_model_id
+        progress_phase = "train_continue_started"
+        result_revision = max(1, (int(payload.get("revision", 1) or 1)) + 1)
+    else:
+        candidate_id = str(payload.get("candidate_id", "")).strip() or "unknown"
+        model_id = f"mdl_{uuid4().hex[:12]}"
+        parent_model_id = ""
+        model_ref = candidate_id
+        progress_phase = "train_started"
+        result_revision = 1
+
     training_kpis = {"val_loss": 0.1, "val_mae": 0.03, "epochs": 1}
     training_stats_extra: dict[str, Any] = {}
     training_history: dict[str, Any] = {}
@@ -74,7 +89,7 @@ def execute_train_model(payload: dict) -> dict:
     if model_definition_full:
         experiment = load_experiment_config(settings.experiment_config_file)
         model_definition_full = normalize_model_definition_to_experiment(dict(model_definition_full), experiment)
-    report_progress({"phase": "train_started", "candidate_id": candidate_id})
+    report_progress({"phase": progress_phase, "model_ref": model_ref})
     if model_definition_full:
         try:
             use_real_data = bool(payload.get("use_real_data", settings.real_data_mode))
@@ -83,7 +98,7 @@ def execute_train_model(payload: dict) -> dict:
                     "status": "failed",
                     "error": {
                         "error_type": "training_mode_error",
-                        "error_message": "train_model requires real data mode (set V3_REAL_DATA_MODE=true)",
+                        "error_message": "train requires real data mode (set V3_REAL_DATA_MODE=true)",
                         "retryable": False,
                     },
                 }
@@ -194,9 +209,14 @@ def execute_train_model(payload: dict) -> dict:
         "training_stats": training_stats,
         "artifact_path": f"storage/artifacts/models/{model_id}/trained/model.weights.h5",
         "checkpoint_path": f"storage/artifacts/models/{model_id}/checkpoints/last.weights.h5",
-        "candidate_id": candidate_id,
-        "revision": 1,
+        "revision": result_revision,
     }
+    if is_continue:
+        result["parent_model_id"] = parent_model_id
+        result["resumed"] = True
+    else:
+        result["candidate_id"] = candidate_id
+
     if model_definition_full:
         result["model_definition_full"] = model_definition_full
     if plot_png_base64:
@@ -205,5 +225,10 @@ def execute_train_model(payload: dict) -> dict:
         result["training_history"] = training_history
     if inline_artifacts:
         result["inline_artifacts"] = inline_artifacts
-    report_progress({"phase": "train_completed", "model_id": model_id, "val_loss": training_kpis.get("val_loss")})
+
+    phase_name = "train_continue_completed" if is_continue else "train_completed"
+    report_progress({"phase": phase_name, "model_id": model_id, "val_loss": training_kpis.get("val_loss")})
     return result
+
+
+execute_train_model = execute_train

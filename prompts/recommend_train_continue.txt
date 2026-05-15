@@ -108,6 +108,11 @@ Return ONLY one valid JSON object with exactly these top-level keys:
 - `target_metric`
 - `target_metric_mode`
 - `max_training_minutes`
+- `soft_max_epochs`
+- `business_metric_sl_weight`
+- `business_metric_tb_weight`
+- `business_min_relative_improvement`
+- `business_improvement_window`
 
 ### Auto-check abans de retornar
 Verifica internament:
