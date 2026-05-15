@@ -705,6 +705,11 @@ def execute_generate_candidate(payload: dict) -> dict:
     prompt_context = _build_prompt_context_from_payload(payload, target_candidates=target)
     prompt_text, unresolved = _render_prompt_template(template_text, prompt_context)
 
+    fallback_prompt_text = prompt_text
+    if target > 1:
+        fallback_context = _build_prompt_context_from_payload(payload, target_candidates=1)
+        fallback_prompt_text, _ = _render_prompt_template(template_text, fallback_context)
+
     print(f"[GEN] mode={mode}", flush=True)
     print(f"[GEN] using template={template_file}", flush=True)
     print(f"[GEN] context keys={','.join(sorted(prompt_context.keys()))}", flush=True)
@@ -734,7 +739,7 @@ def execute_generate_candidate(payload: dict) -> dict:
         llm_out, llm_trace, fallback_reason = _candidate_from_llm(
             candidate_id,
             effective_context,
-            prompt_text,
+            fallback_prompt_text,
             generation_mode=mode,
             template_file=template_file,
         )
