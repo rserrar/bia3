@@ -725,16 +725,20 @@ def execute_generate_candidate(payload: dict) -> dict:
     parent_model_id = _extract_parent_model_id(payload)
     report_progress({"phase": "generate_started", "target_candidates": max(1, target), "mode": mode})
     candidates = []
+    remaining = target
 
     if target > 1:
         batch_out = _try_batch_generate(target, effective_context, prompt_text, mode, template_file, parent_model_id)
         if batch_out is not None:
             candidates = batch_out
-            report_progress({"phase": "generate_completed", "count": len(candidates), "mode": mode, "batch": True})
-            return {"status": "completed", "candidates": candidates}
+            remaining = target - len(candidates)
+            if remaining <= 0:
+                report_progress({"phase": "generate_completed", "count": len(candidates), "mode": mode, "batch": True})
+                return {"status": "completed", "candidates": candidates}
+            print(f"[GEN] batch gave {len(candidates)}/{target}, generating {remaining} more via fallback", flush=True)
 
-    for idx in range(max(1, target)):
-        report_progress({"phase": "generate_candidate_request", "index": idx + 1, "total": max(1, target), "mode": mode})
+    for idx in range(remaining):
+        report_progress({"phase": "generate_candidate_request", "index": idx + 1, "total": max(1, remaining), "mode": mode})
         candidate_id = f"cand_{uuid4().hex[:12]}"
         llm_out, llm_trace, fallback_reason = _candidate_from_llm(
             candidate_id,
@@ -843,8 +847,8 @@ def _try_batch_generate(
             result.append(candidate)
 
     print(f"[GEN] batch parsed {len(result)}/{target} valid candidates", flush=True)
-    if len(result) < target:
-        print(f"[GEN] batch insufficient candidates, falling back", flush=True)
+    if len(result) == 0:
+        print(f"[GEN] batch returned zero valid candidates, falling back", flush=True)
         return None
     return result
 
