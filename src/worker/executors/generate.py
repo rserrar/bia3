@@ -815,14 +815,18 @@ def _try_batch_generate(
     parsed = payload_meta.get("_llm_parsed_payload")
     if isinstance(parsed, list):
         candidates_raw = parsed
+        print(f"[GEN] batch response: array of {len(parsed)} items", flush=True)
     elif isinstance(parsed, dict):
         inner = parsed.get("candidates")
         if isinstance(inner, list):
             candidates_raw = inner
+            print(f"[GEN] batch response: object with candidates array of {len(inner)} items", flush=True)
         else:
-            candidates_raw = [parsed]
+            print(f"[GEN] batch response: single object (not an array), falling back", flush=True)
+            return None
 
     if not isinstance(candidates_raw, list) or len(candidates_raw) == 0:
+        print(f"[GEN] batch response: no valid candidates list, falling back", flush=True)
         return None
 
     result: list[dict[str, Any]] = []
@@ -834,7 +838,9 @@ def _try_batch_generate(
         if candidate is not None:
             result.append(candidate)
 
-    if len(result) == 0:
+    print(f"[GEN] batch parsed {len(result)}/{target} valid candidates", flush=True)
+    if len(result) < target:
+        print(f"[GEN] batch insufficient candidates, falling back", flush=True)
         return None
     return result
 
