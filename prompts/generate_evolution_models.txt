@@ -191,6 +191,7 @@ Si utilitzes `merges`, cada merge ha de seguir aquest format mínim:
 Verifica internament:
 - JSON vàlid
 - camps obligatoris
+- **CRITICAL: el format de sortida ha de coincidir amb num_new_models. Si num_new_models>1, has de retornar {"candidates": [...]} amb exactament num_new_models elements.**
 - `description`, `change_log`, `llm_reasoning`, `potential_next_variations` plens
 - `model_definition_summary` amb tots els camps obligatoris
 - inputs/outputs consistents
@@ -198,17 +199,37 @@ Verifica internament:
 - que el JSON parseja correctament en un parser JSON estàndard
 - que no hi ha claus legacy prohibides
 - que la mutació és realment incremental (no redisseny fort)
-- que la proposta justifica explícitament com intenta millorar SL/TB i/o `decision_score` en comparació amb referències fortes de família
+- que cada candidat justifica explícitament com intenta millorar SL/TB i/o `decision_score` en comparació amb referències fortes de família
 
-### Sortida (OBLIGATÒRIA)
+### Sortida (OBLIGATÒRIA) — LLEGEIX AIXO PRIMER
 Return ONLY valid JSON. Do not include any extra text.
-Format:
-- If num_new_models = 1: a single JSON object with model_definition_full and model_definition_summary.
-- If num_new_models > 1: a JSON object with a "candidates" key containing an array of exactly num_new_models objects, each with model_definition_full and model_definition_summary.
 Never prefix or suffix with any text, explanation, or code markers.
+
+CRITICAL: num_new_models DETERMINES THE FORMAT.
+Do NOT default to a single object. You MUST check num_new_models before deciding the format.
+
+- IF num_new_models = 1 → return a single JSON object with model_definition_full and model_definition_summary.
+- IF num_new_models > 1 → return a JSON object with a "candidates" key containing an ARRAY of exactly num_new_models elements, each with model_definition_full and model_definition_summary.
+
 Before returning, validate that the response is valid JSON and parseable.
 
-Exemple per num_new_models=1:
+Exemple per num_new_models=2 (MULTI-CANDIDATE FORMAT — use when num_new_models>1):
+```json
+{
+  "candidates": [
+    {
+      "model_definition_full": { ... },
+      "model_definition_summary": { ... }
+    },
+    {
+      "model_definition_full": { ... },
+      "model_definition_summary": { ... }
+    }
+  ]
+}
+```
+
+Exemple per num_new_models=1 (SINGLE FORMAT — use when num_new_models=1):
 ```json
 {
   "model_definition_full": {
@@ -240,21 +261,5 @@ Exemple per num_new_models=1:
     "next_variations": ["...", "..."],
     "competitiveness_hypothesis": "..."
   }
-}
-```
-
-Exemple per num_new_models=2:
-```json
-{
-  "candidates": [
-    {
-      "model_definition_full": { ... },
-      "model_definition_summary": { ... }
-    },
-    {
-      "model_definition_full": { ... },
-      "model_definition_summary": { ... }
-    }
-  ]
 }
 ```
