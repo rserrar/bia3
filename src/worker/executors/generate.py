@@ -813,6 +813,8 @@ def _try_batch_generate(
     payload_meta = payload if isinstance(payload, dict) else {}
     candidates_raw = None
     parsed = payload_meta.get("_llm_parsed_payload")
+    if parsed is None and isinstance(payload_meta, dict):
+        parsed = {k: v for k, v in payload_meta.items() if not k.startswith("_llm_")}
     print(f"[GEN] batch response type={type(parsed).__name__}", flush=True)
     if isinstance(parsed, list):
         candidates_raw = parsed
