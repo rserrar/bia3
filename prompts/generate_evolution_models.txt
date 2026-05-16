@@ -30,11 +30,16 @@ available_outputs_description:
 ### Regles principals
 1. El parent model és la base: no redisseny total.
 2. Canvis incrementals, justificats i fàcils d'atribuir; màxim 1 canvi estructural menor i 1-2 refinaments.
-3. Evita repetir patrons de la família sense variació real, especialment si el context mostra saturació sense breakthrough.
-4. Explica clarament què canvies respecte al parent, quin mecanisme concret hauria d'ajudar a millorar SL/TB i/o `decision_score` versus referències fortes de família, i quines serien les següents variants.
-5. Prioritza estabilitat build/compile/smoke-fit.
-6. Si dubtes d'schema o consistència, simplifica; si dubtes de competitivitat, escull el refinament amb més potencial explicable.
-7. Si una proposta implica salt arquitectònic fort, NO és evolution: reconduir-la a mutació incremental.
+3. Potencia la varietat: no et limitis a canvis topologics. Considera tambe:
+   - Canviar quines entrades s'usen (afegir/treure features com volum si estan a available_inputs_description)
+   - Modificar sortides auxiliars
+   - Variar la profunditat/complexitat de les capes (mes/menys capes, diferents units)
+   - Reorganitzar branques o fluxos interns
+4. Evita repetir patrons de la família sense variació real, especialment si el context mostra saturació sense breakthrough.
+5. Explica clarament què canvies respecte al parent, quin mecanisme concret hauria d'ajudar a millorar SL/TB i/o `decision_score` versus referències fortes de família, i quines serien les següents variants.
+6. Prioritza estabilitat build/compile/smoke-fit.
+7. Si dubtes d'schema o consistència, simplifica; si dubtes de competitivitat, escull el refinament amb més potencial explicable.
+8. Si una proposta implica salt arquitectònic fort, NO és evolution: reconduir-la a mutació incremental.
 
 ### Procés mental recomanat
 1. Llegeix primer el `parent_model`, `family_models`, `family_metrics_summary` i `genealogy_case_studies` abans de dissenyar res.

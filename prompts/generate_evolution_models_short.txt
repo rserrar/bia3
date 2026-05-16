@@ -18,9 +18,11 @@ architecture_guide_content: {{architecture_guide_content}}
 
 ### Regles
 1. Mutacio incremental: 1 canvi estructural moderat + 1 refinament. No redisseny forts.
-2. Justifica: com la mutacio millora SL/TB i/o decision_score versus el pare i referencies fortes de familia.
-3. Consulta conversation_history per evitar repetir patrons ja provats sense exit.
-4. Reutilitza mecanismes que van funcionar en iteracions anteriors.
+2. Potencia la varietat: considera tambe canviar quines entrades s'usen (afegir/treure features com volum), modificar sortides auxiliars, o variar la profunditat/complexitat de les capes. No et limitis a nomes canvis topologics.
+3. Justifica: com la mutacio millora SL/TB i/o decision_score versus el pare i referencies fortes de familia.
+4. Consulta conversation_history per evitar repetir patrons ja provats sense exit.
+5. Reutilitza mecanismes que van funcionar en iteracions anteriors.
+6. Si el pare no usa volum o altres features disponibles, considera afegir-les si poden aportar informacio predictiva.
 
 ### training_config
 Camps permesos: batch_size, epochs, validation_split, early_stopping_patience, reduce_lr_patience/factor, min_lr, restore_best_weights, initial_learning_rate, optimizer, seed, target_metric/mode, max_training_minutes, soft_max_epochs, business_metric_sl_weight, business_metric_tb_weight, business_min_relative_improvement, business_improvement_window.
@@ -38,6 +40,7 @@ Camps permesos: batch_size, epochs, validation_split, early_stopping_patience, r
 - inputs/outputs consistents, capes suportades
 - Mutacio realment incremental (no redisseny fort)
 - Justifica SL/TB i/o decision_score versus familia
+- **Si el pare no usa certes features disponibles (ex: volum), valora si la mutacio podria beneficiar-se d'afegir-les.**
 
 ### Sortida (OBLIGATORIA)
 Return ONLY valid JSON. No extra text. No prefix/suffix.
