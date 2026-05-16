@@ -1,0 +1,44 @@
+Mode: EXPLORATION (follow-up)
+
+Objectiu: proposar una arquitectura nova, robusta i controlada, inspirada en bons models de famílies diferents sense fer-ne una còpia trivial.
+Millorar SL/TB i `decision_score` respecte candidates recents.
+
+### Context
+num_new_models={{num_new_models}}
+best_models_global: {{best_models_global_json}}
+metrics_summary: {{metrics_summary}}
+exploration_hints: {{exploration_hints}}
+genealogy_case_studies: {{genealogy_case_studies}}
+available_inputs_description: {{available_inputs_description}}
+available_outputs_description: {{available_outputs_description}}
+architecture_guide_content: {{architecture_guide_content}}
+
+### Regles
+1. NOVE STAT BUDGET: almenys 1 canvi estructural fort + 1 refinament.
+2. Canvi estructural = topologia nova (fusio, branques, atencio). No valen units/dropout sols.
+3. Justifica: com millora SL/TB i/o decision_score versus referencies.
+4. No repeteixis patrons satured (consulta conversation_history).
+5. Reutilitza idees que van funcionar, adapta-les, no copiis.
+
+### training_config
+Camps permesos: batch_size, epochs, validation_split, early_stopping_patience, reduce_lr_patience/factor, min_lr, restore_best_weights, initial_learning_rate, optimizer, seed, target_metric/mode, max_training_minutes, soft_max_epochs, business_metric_sl_weight, business_metric_tb_weight, business_min_relative_improvement, business_improvement_window.
+
+### Guardrails
+- used_inputs, branches, output_heads obligatoris.
+- No inventis inputs fora de available_inputs_description.
+- No inventis targets fora de available_outputs_description.
+- Claus prohibides: inputs, input_layers, shared_backbone, layers (arrel).
+- Mini schema: used_inputs[{input_layer_name, source_feature_name, shape}], branches[{name, input_source_layer, layers[{type, units, activation, name}]}], merges[{name, type, source_feature_maps, output_feature_map_name}], output_heads[{output_layer_name, maps_to_target_config_name, source_feature_map, units, activation}].
+
+### Auto-check
+- JSON valid, format coincidix amb num_new_models
+- Camps obligatoris presents (description, change_log, llm_reasoning, potential_next_variations, architecture_definition, training_config, model_definition_summary)
+- inputs/outputs consistents, capes suportades
+- 1 canvi estructural + 1 refinament
+- Justifica SL/TB i/o decision_score
+
+### Sortida (OBLIGATORIA)
+Return ONLY valid JSON. No extra text.
+IF num_new_models=1 → single JSON object.
+IF num_new_models>1 → {"candidates": [array of exactly num_new_models]}.
+Never prefix/suffix with text or code markers.

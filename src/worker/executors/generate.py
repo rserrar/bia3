@@ -696,13 +696,22 @@ def execute_generate_candidate(payload: dict) -> dict:
     if mode not in {"repair", "evolution", "exploration"}:
         mode = "exploration"
 
-    template_file = _template_file_for_mode(mode)
+    target = int(payload.get("target_candidates", 1) or 1)
+    prompt_context = _build_prompt_context_from_payload(payload, target_candidates=target)
+
+    genealogy = str(prompt_context.get("genealogy_case_studies", ""))
+    has_conversation_history = "conversation_history" in genealogy
+
+    if mode == "repair":
+        template_file = "prompts/fix_model_error.txt"
+    elif has_conversation_history:
+        template_file = f"prompts/generate_{mode}_models_short.txt"
+    else:
+        template_file = f"prompts/generate_{mode}_models.txt"
     template_text = _read_text_if_exists(template_file)
     if template_text.strip() == "":
         template_text = _default_template_for_mode(mode)
 
-    target = int(payload.get("target_candidates", 1) or 1)
-    prompt_context = _build_prompt_context_from_payload(payload, target_candidates=target)
     prompt_text, unresolved = _render_prompt_template(template_text, prompt_context)
 
     fallback_prompt_text = prompt_text
@@ -715,8 +724,7 @@ def execute_generate_candidate(payload: dict) -> dict:
     print(f"[GEN] context keys={','.join(sorted(prompt_context.keys()))}", flush=True)
     print(f"[GEN] prompt size={len(prompt_text)}", flush=True)
     print(f"[GEN] target_candidates={target}", flush=True)
-    if unresolved:
-        print(f"[GEN][WARN] unresolved placeholders={','.join(unresolved)}", flush=True)
+    print(f"[GEN] has_conversation_history={has_conversation_history}", flush=True)
 
     effective_context = dict(payload)
     nested_context = _as_dict(payload.get("prompt_context"))
