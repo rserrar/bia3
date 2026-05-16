@@ -12,6 +12,7 @@ from .executors.validate import execute_validate_candidate
 from .executors.train import execute_train_model
 from .executors.train_continue import execute_train_continue
 from .executors.recommend_train_continue import execute_recommend_train_continue
+from .executors.summarize_conversation import execute_summarize_conversation
 from .client import WorkerApiClient
 from src.shared.settings import load_settings
 
@@ -31,6 +32,8 @@ def execute_task(task: dict[str, Any]) -> dict[str, Any]:
         return execute_train_continue(payload)
     if task_type == "recommend_train_continue":
         return execute_recommend_train_continue(payload)
+    if task_type == "summarize_conversation":
+        return execute_summarize_conversation(payload)
 
     return {
         "status": "failed",
