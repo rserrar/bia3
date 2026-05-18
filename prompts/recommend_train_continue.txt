@@ -22,6 +22,9 @@ training_history_summary:
 family_history_summary:
 {{family_history_summary_json}}
 
+conversation_history_summary:
+{{conversation_history_summary_json}}
+
 current_training_config:
 {{current_training_config_json}}
 
@@ -60,6 +63,7 @@ Decideix UNA de les opcions seguents:
 13. Usa `model_comparison_summary` per evitar deduccions implícites innecessàries sobre parent i champion.
 14. Usa `training_history_summary` per detectar senyals de corba (`best_epoch`, `improvement_last_epochs`, `lr_reductions`, `plateau_detected`).
 15. Usa els camps de cost (`training_time_minutes`, `dataset_size`, `compute_cost_estimate`) per estimar millor `expected_cost`.
+16. Usa `conversation_history_summary` per evitar repetir recomanacions ja provades sense resultat.
 
 ### Camps de sortida obligatoris
 Return ONLY one valid JSON object with exactly these top-level keys:

@@ -29,6 +29,7 @@ def execute_recommend_train_continue(payload: dict[str, Any]) -> dict[str, Any]:
         model_comparison_summary=payload.get("model_comparison_summary") if isinstance(payload.get("model_comparison_summary"), dict) else {},
         training_history_summary=payload.get("training_history_summary") if isinstance(payload.get("training_history_summary"), dict) else {},
         family_history_summary=payload.get("family_history_summary") if isinstance(payload.get("family_history_summary"), dict) else {},
+        conversation_history_summary=payload.get("conversation_history_summary") if isinstance(payload.get("conversation_history_summary"), dict) else {},
         current_training_config=payload.get("current_training_config") if isinstance(payload.get("current_training_config"), dict) else {},
         available_training_fields=payload.get("available_training_fields") if isinstance(payload.get("available_training_fields"), dict) else {},
     )

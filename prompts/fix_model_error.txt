@@ -39,6 +39,29 @@ available_outputs_contract_json (EXACTE; usa aquests targets, output_layer_name 
 7. Si cal simplificar, fes-ho mínimament mantenint l'estructura global.
 8. No facis servir claus legacy (`inputs`, `input_layers`, `shared_backbone`) dins `architecture_definition`.
 
+### Capes suportades i paràmetres mínims
+El model pot usar les següents capes suportades pel runtime de la V3. Cada capa ha de respectar els paràmetres mínims indicats.
+- `Dense`: requereix `units`.
+- `Conv1D`: requereix `kernel_size` i `filters`.
+- `SeparableConv1D`: requereix `kernel_size`, `filters`, i `depth_multiplier` si s'especifica.
+- `LSTM` / `GRU`: requereixen `units`.
+- `Bidirectional`: requereix `wrapped_layer` o `inner_layer` amb `LSTM` o `GRU`.
+- `TimeDistributed`: requereix `wrapped_layer` o `inner_layer`.
+- `AttentionKeras` / `MultiHeadAttentionKeras`: requereixen tensors de rank >=3.
+- `Add` / `Multiply` / `Concatenate`: requereixen `input_source_feature_maps` amb >=2 tensors.
+- `MaxPooling1D` / `AveragePooling1D` / `GlobalMaxPooling1D` / `GlobalAveragePooling1D` / `Flatten`.
+- `RepeatVector`, `GaussianNoise`, `Masking`, `Activation`, `Softmax`, `ReLU`, `LeakyReLU`, `PReLU`, `ELU`.
+- `BatchNormalization`, `LayerNormalization`, `Reshape`, `LambdaSlice`.
+
+### Errors comuns i solucions
+- Si l'error és de dimensió, comprova si `Conv1D`, `LSTM`, `GRU`, `AttentionKeras` o `MultiHeadAttentionKeras` requereixen tensors de rank >=3.
+- Si el model usa `TimeDistributed`, comprova que el `wrapped_layer` o `inner_layer` sigui una capa suportada i vàlida.
+- Si el model usa `Bidirectional`, comprova que el `wrapped_layer` o `inner_layer` sigui `LSTM` o `GRU`.
+- Si el model usa `Add`, `Multiply` o `Concatenate`, comprova que `input_source_feature_maps` sigui una llista amb almenys 2 tensors vàlids.
+- Si el model falla per incompatibilitat d'inputs, mantén `used_inputs` amb els noms i shapes exactes de `available_inputs_contract_json`.
+- Si el model falla per `output_heads`, mantén `maps_to_target_config_name` i `units` segons `available_outputs_contract_json`.
+- Si hi ha dubte entre noms antics i nous, usa exclusivament els noms d'`available_inputs_contract_json` i `available_outputs_contract_json`.
+
 ### Guardrails d'arquitectura
 - `architecture_definition` obligatori.
 - `used_inputs` obligatori i no buit.

@@ -8,6 +8,15 @@ from .model_definition_normalizer import normalize_model_definition_to_experimen
 from .model_runtime import run_smoke_fit_real_data
 from ..progress import report_progress
 
+SUPPORTED_LAYER_TYPES = {
+    "Dense", "Dropout", "SpatialDropout1D", "BatchNormalization", "LayerNormalization",
+    "Reshape", "Conv1D", "SeparableConv1D", "LSTM", "GRU", "Bidirectional",
+    "TimeDistributed", "MaxPooling1D", "AveragePooling1D", "GlobalMaxPooling1D",
+    "GlobalAveragePooling1D", "Flatten", "RepeatVector", "GaussianNoise", "Masking",
+    "Activation", "Softmax", "ReLU", "LeakyReLU", "PReLU", "ELU", "LambdaSlice",
+    "Add", "Multiply", "Concatenate", "AttentionKeras", "MultiHeadAttentionKeras",
+}
+
 
 def _as_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
@@ -129,8 +138,11 @@ def validate_model_definition_schema(model_definition_full: dict[str, Any]) -> l
                         if not isinstance(raw_layer, dict):
                             errors.append(f"branches[{branch_idx}].layers[{layer_idx}] must be a dict")
                             continue
-                        if _layer_kind(raw_layer) == "":
+                        kind = _layer_kind(raw_layer)
+                        if kind == "":
                             errors.append(f"branches[{branch_idx}].layers[{layer_idx}] must include type or layer_type")
+                        elif kind not in SUPPORTED_LAYER_TYPES:
+                            errors.append(f"branches[{branch_idx}].layers[{layer_idx}] has unsupported layer type '{kind}'")
                 if not _is_non_empty_string(raw_branch.get("output_feature_map_name")):
                     errors.append(f"branches[{branch_idx}].output_feature_map_name must be a non-empty string")
 
@@ -244,6 +256,10 @@ def validate_model_definition_schema(model_definition_full: dict[str, Any]) -> l
                 errors.append(
                     f"merges[{merge_idx}].layers_after_merge[{layer_idx}] explicit_input_source_feature_map '{explicit_source}' is unknown"
                 )
+            if kind == "":
+                errors.append(f"merges[{merge_idx}].layers_after_merge[{layer_idx}] must include type or layer_type")
+            elif kind not in SUPPORTED_LAYER_TYPES:
+                errors.append(f"merges[{merge_idx}].layers_after_merge[{layer_idx}] has unsupported layer type '{kind}'")
             if kind in multi_input_required:
                 sources = layer.get("input_source_feature_maps")
                 if not isinstance(sources, list) or len(sources) == 0:

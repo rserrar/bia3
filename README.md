@@ -4,6 +4,8 @@ Repositori minim per executar workers Colab contra l'API V3.
 
 ## Setup rapid
 
+os.environ["V3_WORKER_TASK_TYPES"]=""
+
 1. Copia `.env.example` a `.env` (o defineix variables al notebook).
 2. Defineix com a minim:
    - `V3_API_BASE_URL=https://control.einavirtual.com/v3/public/index.php`
@@ -63,6 +65,37 @@ os.environ["V3_REAL_DATA_MODE"] = "true"
 ```python
 !PYTHONPATH=/content/bia3 python -u -m src.worker.main
 ```
+
+## Workers per rol
+
+Es poden separar els quaderns segons el tipus de tasca que han de reclamar del servidor.
+
+- `train-only`: nomes fa `train_model` i `train_continue`
+- `non-train`: fa `generate_candidate`, `validate_candidate` i `recommend_train_continue`
+
+Variable d'entorn:
+
+```python
+os.environ["V3_WORKER_TASK_TYPES"] = "train_model,train_continue"
+```
+
+o be:
+
+```python
+os.environ["V3_WORKER_TASK_TYPES"] = "generate_candidate,validate_candidate,recommend_train_continue"
+```
+
+Configuracio recomanada:
+
+- quaderns amb `T4` o GPU compatible/estable per TensorFlow:
+  - `V3_WORKER_TASK_TYPES=train_model,train_continue`
+- quaderns CPU, A100 o altres quaderns auxiliars:
+  - `V3_WORKER_TASK_TYPES=generate_candidate,validate_candidate,recommend_train_continue`
+
+Important:
+
+- el servidor ha de tenir desplegat el `ApiService.php` que filtra el `claimTask` segons `capabilities.tasks`
+- despres de canviar `V3_WORKER_TASK_TYPES`, reinicia el quadern o el worker perque es torni a registrar amb les noves capabilities
 
 ## Notes
 

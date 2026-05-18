@@ -41,6 +41,27 @@ available_outputs_description:
 7. Si dubtes d'schema o consistència, simplifica; si dubtes de competitivitat, escull el refinament amb més potencial explicable.
 8. Si una proposta implica salt arquitectònic fort, NO és evolution: reconduir-la a mutació incremental.
 
+### Capes suportades i paràmetres mínims
+El model pot usar les següents capes suportades pel runtime de la V3. Cada capa ha de respectar els paràmetres mínims indicats.
+- `Dense`: requereix `units`.
+- `Conv1D`: requereix `kernel_size` i `filters`.
+- `SeparableConv1D`: requereix `kernel_size`, `filters`, i `depth_multiplier` si s'especifica.
+- `LSTM` / `GRU`: requereixen `units`.
+- `Bidirectional`: requereix `wrapped_layer` o `inner_layer` amb `LSTM` o `GRU`.
+- `TimeDistributed`: requereix `wrapped_layer` o `inner_layer`.
+- `AttentionKeras` / `MultiHeadAttentionKeras`: requereixen tensors de rank >=3.
+- `Add` / `Multiply` / `Concatenate`: requereixen `input_source_feature_maps` amb >=2 tensors.
+- `MaxPooling1D` / `AveragePooling1D` / `GlobalMaxPooling1D` / `GlobalAveragePooling1D` / `Flatten`.
+- `RepeatVector`, `GaussianNoise`, `Masking`, `Activation`, `Softmax`, `ReLU`, `LeakyReLU`, `PReLU`, `ELU`.
+- `BatchNormalization`, `LayerNormalization`, `Reshape`, `LambdaSlice`.
+
+### Regles de format i consistència
+- No utilitzis claus legacy dins `architecture_definition`: `inputs`, `input_layers`, `shared_backbone`.
+- Si `num_new_models=1`, retorna un objecte JSON amb `model_definition_full` i `model_definition_summary`.
+- Si `num_new_models>1`, retorna `{ "candidates": [ ... ] }` amb exactament `num_new_models` elements.
+- No emboliquis la resposta dins de markdown ni blocs de codi.
+- Utilitza noms d'inputs i targets exclusivament dels `available_inputs_description` i `available_outputs_description`.
+
 ### Procés mental recomanat
 1. Llegeix primer el `parent_model`, `family_models`, `family_metrics_summary` i `genealogy_case_studies` abans de dissenyar res.
 2. Formula una hipòtesi principal breu i atribuïble: quin canvi hauria de millorar SL/TB o decision_score.

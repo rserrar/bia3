@@ -522,6 +522,7 @@ def recommend_train_continue_via_openai(
     model_comparison_summary: dict[str, Any],
     training_history_summary: dict[str, Any],
     family_history_summary: dict[str, Any],
+    conversation_history_summary: dict[str, Any],
     current_training_config: dict[str, Any],
     available_training_fields: dict[str, Any],
 ) -> dict[str, Any]:
@@ -539,6 +540,7 @@ def recommend_train_continue_via_openai(
         "model_comparison_summary_json": json.dumps(model_comparison_summary, ensure_ascii=False, indent=2),
         "training_history_summary_json": json.dumps(training_history_summary, ensure_ascii=False, indent=2),
         "family_history_summary_json": json.dumps(family_history_summary, ensure_ascii=False, indent=2),
+        "conversation_history_summary_json": json.dumps(conversation_history_summary, ensure_ascii=False, indent=2),
         "current_training_config_json": json.dumps(current_training_config, ensure_ascii=False, indent=2),
         "available_training_fields_json": json.dumps(available_training_fields, ensure_ascii=False, indent=2),
     }
