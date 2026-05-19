@@ -27,6 +27,9 @@ available_inputs_description:
 available_outputs_description:
 {{available_outputs_description}}
 
+architecture_guide_content:
+{{architecture_guide_content}}
+
 ### Regles principals
 1. El parent model és la base: no redisseny total.
 2. Canvis incrementals, justificats i fàcils d'atribuir; màxim 1 canvi estructural menor i 1-2 refinaments.
@@ -44,16 +47,19 @@ available_outputs_description:
 ### Capes suportades i paràmetres mínims
 El model pot usar les següents capes suportades pel runtime de la V3. Cada capa ha de respectar els paràmetres mínims indicats.
 - `Dense`: requereix `units`.
+- `Dropout`: usa `rate`.
+- `SpatialDropout1D`: usa `rate` i és especialment útil en branques temporals/convolucionals.
 - `Conv1D`: requereix `kernel_size` i `filters`.
 - `SeparableConv1D`: requereix `kernel_size`, `filters`, i `depth_multiplier` si s'especifica.
 - `LSTM` / `GRU`: requereixen `units`.
 - `Bidirectional`: requereix `wrapped_layer` o `inner_layer` amb `LSTM` o `GRU`.
 - `TimeDistributed`: requereix `wrapped_layer` o `inner_layer`.
 - `AttentionKeras` / `MultiHeadAttentionKeras`: requereixen tensors de rank >=3.
-- `Add` / `Multiply` / `Concatenate`: requereixen `input_source_feature_maps` amb >=2 tensors.
+- `Add` / `Multiply` / `Concatenate`: requereixen `source_feature_maps` amb >=2 tensors.
 - `MaxPooling1D` / `AveragePooling1D` / `GlobalMaxPooling1D` / `GlobalAveragePooling1D` / `Flatten`.
 - `RepeatVector`, `GaussianNoise`, `Masking`, `Activation`, `Softmax`, `ReLU`, `LeakyReLU`, `PReLU`, `ELU`.
 - `BatchNormalization`, `LayerNormalization`, `Reshape`, `LambdaSlice`.
+- Consulta `architecture_guide_content` per exemples funcionals amb CNN, RNN, attention, fusió multi-branca i regularització.
 
 ### Regles de format i consistència
 - No utilitzis claus legacy dins `architecture_definition`: `inputs`, `input_layers`, `shared_backbone`.
@@ -153,7 +159,7 @@ Si `family_models` és buit o molt petit, tracta-ho com a família poc explorada
 - Cada item de `merges` ha de tenir `name`, `type`, `source_feature_maps` (llista no buida) i `output_feature_map_name`.
 - No inventis inputs/targets fora dels disponibles.
 - Mantén coherència de `maps_to_target_config_name`.
-- `Add`/`Multiply`/`Concatenate`: `input_source_feature_maps` >=2.
+- `Add`/`Multiply`/`Concatenate`: `source_feature_maps` >=2.
 - `AttentionKeras`/`MultiHeadAttentionKeras`: rank >=3.
 - `TimeDistributed`: inner layer suportada.
 - `Bidirectional`: requereix `wrapped_layer` o `inner_layer`.

@@ -2,6 +2,27 @@
 
 Small operational log to correlate behavior changes with deploy moments.
 
+## 2026-05-19
+
+- **Prompt layer coverage expanded**:
+  - `prompts/generate_exploration_models.txt`
+  - `prompts/generate_evolution_models.txt`
+  - `prompts/generate_exploration_models_short.txt`
+  - `prompts/generate_evolution_models_short.txt`
+  - Scope: worker prompt/runtime guidance change (no Python runtime logic change).
+  - Purpose: reduce the LLM bias toward Dense-only branches and make all validator-supported layer families explicit in both long and short generation prompts.
+
+- **Prompt/schema alignment fixes**:
+  - explicit inclusion of `Dropout` and `SpatialDropout1D` in long prompts,
+  - explicit layer inventory also in short prompts,
+  - reference to `architecture_guide_content` as non-dense guidance,
+  - normalized merge terminology to `source_feature_maps`.
+
+- **Expected rollout effect**:
+  - more architectural variety in generated candidates,
+  - especially in notebook flows that use short prompts when `conversation_history` is present,
+  - no server PHP deploy required for prompt text alone, but Colab/notebook workers must reload the updated prompt files.
+
 ## 2026-04-25
 
 - **Training data update**:

@@ -20,6 +20,11 @@ architecture_guide_content: {{architecture_guide_content}}
 4. No repeteixis patrons satured (consulta conversation_history).
 5. Reutilitza idees que van funcionar, adapta-les, no copiis.
 
+### Capes suportades
+- No et limitis a `Dense`: el runtime suporta tambe `Dropout`, `SpatialDropout1D`, `Conv1D`, `SeparableConv1D`, `LSTM`, `GRU`, `Bidirectional`, `TimeDistributed`, `AttentionKeras`, `MultiHeadAttentionKeras`, `Add`, `Multiply`, `Concatenate`, `BatchNormalization`, `LayerNormalization`, `Reshape`, `LambdaSlice`, `MaxPooling1D`, `AveragePooling1D`, `GlobalMaxPooling1D`, `GlobalAveragePooling1D`, `Flatten`, `RepeatVector`, `GaussianNoise`, `Masking`, `Activation`, `Softmax`, `ReLU`, `LeakyReLU`, `PReLU`, `ELU`.
+- Tria la capa segons la hipotesi arquitectonica; no assumeixis que una pila `Dense` es l'opcio per defecte.
+- Consulta `architecture_guide_content` per exemples funcionals de capes no denses i combinacions multi-branca.
+
 ### training_config
 Camps permesos: batch_size, epochs, validation_split, early_stopping_patience, reduce_lr_patience/factor, min_lr, restore_best_weights, initial_learning_rate, optimizer, seed, target_metric/mode, max_training_minutes, soft_max_epochs, business_metric_sl_weight, business_metric_tb_weight, business_min_relative_improvement, business_improvement_window.
 
@@ -28,6 +33,7 @@ Camps permesos: batch_size, epochs, validation_split, early_stopping_patience, r
 - No inventis inputs fora de available_inputs_description.
 - No inventis targets fora de available_outputs_description.
 - Claus prohibides: inputs, input_layers, shared_backbone, layers (arrel).
+- Per merges i capes multi-input usa `source_feature_maps`.
 - Mini schema: used_inputs[{input_layer_name, source_feature_name, shape}], branches[{name, input_source_layer, layers[{type, units, activation, name}]}], merges[{name, type, source_feature_maps, output_feature_map_name}], output_heads[{output_layer_name, maps_to_target_config_name, source_feature_map, units, activation}].
 
 ### Auto-check
