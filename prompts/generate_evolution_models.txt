@@ -55,10 +55,17 @@ El model pot usar les següents capes suportades pel runtime de la V3. Cada capa
 - `Bidirectional`: requereix `wrapped_layer` o `inner_layer` amb `LSTM` o `GRU`.
 - `TimeDistributed`: requereix `wrapped_layer` o `inner_layer`.
 - `AttentionKeras` / `MultiHeadAttentionKeras`: requereixen tensors de rank >=3.
-- `Add` / `Multiply` / `Concatenate`: requereixen `source_feature_maps` amb >=2 tensors.
+- `Add` / `Multiply` / `Concatenate` dins `branches[].layers[]` o `merges[].layers_after_merge[]`: requereixen `input_source_feature_maps` amb >=2 tensors.
+- `AttentionKeras`: dins capes, requereix `input_source_feature_maps` amb 2-3 tensors 3D.
+- `MultiHeadAttentionKeras`: dins capes, requereix `input_source_feature_maps` amb 1-3 tensors 3D.
+- `merges[]`: requereixen `source_feature_maps` amb >=2 tensors.
 - `MaxPooling1D` / `AveragePooling1D` / `GlobalMaxPooling1D` / `GlobalAveragePooling1D` / `Flatten`.
 - `RepeatVector`, `GaussianNoise`, `Masking`, `Activation`, `Softmax`, `ReLU`, `LeakyReLU`, `PReLU`, `ELU`.
 - `BatchNormalization`, `LayerNormalization`, `Reshape`, `LambdaSlice`.
+- `Reshape`: usa `target_shape` per adaptar tensors 2D/3D.
+- `MaxPooling1D` / `AveragePooling1D`: si s'especifiquen, usa `pool_size`.
+- `Activation`: si s'usa com a capa explícita, defineix `activation_function`.
+- `MultiHeadAttentionKeras`: defineix `constructor_params.num_heads` i `constructor_params.key_dim`.
 - Consulta `architecture_guide_content` per exemples funcionals amb CNN, RNN, attention, fusió multi-branca i regularització.
 
 ### Regles de format i consistència
@@ -73,7 +80,8 @@ El model pot usar les següents capes suportades pel runtime de la V3. Cada capa
 2. Formula una hipòtesi principal breu i atribuïble: quin canvi hauria de millorar SL/TB o decision_score.
 3. Decideix explícitament què mantens del parent perquè ja funciona, i què canvies perquè sospites que és el coll d'ampolla.
 4. Dissenya la mutació més petita possible que permeti validar aquesta hipòtesi.
-5. Abans de retornar, revisa si el JSON final ajuda una futura generació a entendre què s'ha provat i com continuar l'experiment.
+5. Construeix el wiring i les shapes capa per capa; no assumeixis que una idea arquitectònica és vàlida només perquè sona raonable.
+6. Abans de retornar, revisa si el JSON final ajuda una futura generació a entendre què s'ha provat i com continuar l'experiment.
 
 ### Camps obligatoris de context experimental
 Has de retornar aquests camps dins `model_definition_full`:
@@ -159,11 +167,20 @@ Si `family_models` és buit o molt petit, tracta-ho com a família poc explorada
 - Cada item de `merges` ha de tenir `name`, `type`, `source_feature_maps` (llista no buida) i `output_feature_map_name`.
 - No inventis inputs/targets fora dels disponibles.
 - Mantén coherència de `maps_to_target_config_name`.
-- `Add`/`Multiply`/`Concatenate`: `source_feature_maps` >=2.
+- `Add`/`Multiply`/`Concatenate` dins capes: `input_source_feature_maps` >=2.
+- `merges[]`: `source_feature_maps` >=2.
 - `AttentionKeras`/`MultiHeadAttentionKeras`: rank >=3.
+- `AttentionKeras`/`MultiHeadAttentionKeras` dins capes requereixen `input_source_feature_maps` no buit.
 - `TimeDistributed`: inner layer suportada.
 - `Bidirectional`: requereix `wrapped_layer` o `inner_layer`.
 - `Dense` requereix `units`; `Conv1D` requereix `kernel_size`; `GRU/LSTM` requereixen `units`.
+- Si una branca usa `Conv1D`, `LSTM`, `GRU`, `AttentionKeras` o `MultiHeadAttentionKeras`, assegura't que rep un tensor 3D; si cal, afegeix `Reshape` abans.
+- No apliquis `AttentionKeras` o `MultiHeadAttentionKeras` sobre la sortida de `Flatten`, `GlobalMaxPooling1D` o `GlobalAveragePooling1D`; fes l'atenció abans del pooling.
+- Si uses `Add` o `Multiply`, les entrades han de tenir exactament la mateixa shape; si no, projecta-les abans amb una capa compatible o simplifica la mutació.
+- Si uses `Concatenate`, les entrades han de ser compatibles excepte a l'eix de concatenació.
+- Si introdueixes residuals o gates, comprova explícitament que el tensor de senyal i el tensor de gate/projecció tenen dimensions compatibles.
+- No barregis `input_source_feature_maps` i `source_feature_maps` al mateix objecte.
+- Si la mutació introdueix attention o wiring complex, prefereix un patró funcional d'`architecture_guide_content` o del parent abans que un redisseny improvisat.
 
 ### Claus prohibides (dialecte legacy)
 No utilitzis aquestes claus dins `architecture_definition`:
@@ -232,6 +249,11 @@ Verifica internament:
 - que no hi ha claus legacy prohibides
 - que la mutació és realment incremental (no redisseny fort)
 - que cada candidat justifica explícitament com intenta millorar SL/TB i/o `decision_score` en comparació amb referències fortes de família
+- que cada `merge` usa `source_feature_maps`
+- que cada capa multi-input usa `input_source_feature_maps`
+- que no hi ha `MultiHeadAttentionKeras` sense `constructor_params.num_heads` i `key_dim`
+- que no hi ha `Add`/`Multiply` amb shapes incompatibles evidents
+- que no hi ha capes seqüencials/atenció rebent tensors 2D quan necessiten 3D
 
 ### Sortida (OBLIGATÒRIA) — LLEGEIX AIXO PRIMER
 Return ONLY valid JSON. Do not include any extra text.

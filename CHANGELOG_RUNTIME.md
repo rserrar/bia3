@@ -18,6 +18,19 @@ Small operational log to correlate behavior changes with deploy moments.
   - reference to `architecture_guide_content` as non-dense guidance,
   - normalized merge terminology to `source_feature_maps`.
 
+- **Repair prompt strengthened for complex architectures**:
+  - `prompts/fix_model_error.txt`
+  - restored `architecture_guide_content` for repair-time pattern matching,
+  - clarified the split between `source_feature_maps` (for `merges[]`) and `input_source_feature_maps` (for multi-input layers inside branches / layers-after-merge),
+  - added stronger guidance for shape mismatch, attention wiring, residual/add/multiply failures, and minimum-change repair strategy.
+
+- **Generation prompts hardened against real build failures**:
+  - `prompts/generate_exploration_models.txt`
+  - `prompts/generate_evolution_models.txt`
+  - `prompts/generate_exploration_models_short.txt`
+  - `prompts/generate_evolution_models_short.txt`
+  - added stronger construction-time guidance for rank/shape compatibility, attention-before-pooling, residual/add/multiply safety, and explicit distinction between `source_feature_maps` (`merges[]`) and `input_source_feature_maps` (multi-input layers).
+
 - **Expected rollout effect**:
   - more architectural variety in generated candidates,
   - especially in notebook flows that use short prompts when `conversation_history` is present,

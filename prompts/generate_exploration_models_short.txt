@@ -33,8 +33,13 @@ Camps permesos: batch_size, epochs, validation_split, early_stopping_patience, r
 - No inventis inputs fora de available_inputs_description.
 - No inventis targets fora de available_outputs_description.
 - Claus prohibides: inputs, input_layers, shared_backbone, layers (arrel).
-- Per merges i capes multi-input usa `source_feature_maps`.
-- Mini schema: used_inputs[{input_layer_name, source_feature_name, shape}], branches[{name, input_source_layer, layers[{type, units, activation, name}]}], merges[{name, type, source_feature_maps, output_feature_map_name}], output_heads[{output_layer_name, maps_to_target_config_name, source_feature_map, units, activation}].
+- `merges[]` usa `source_feature_maps`; capes multi-input dins branches o `layers_after_merge` usen `input_source_feature_maps`.
+- `AttentionKeras` usa `input_source_feature_maps` amb 2-3 tensors; `MultiHeadAttentionKeras` amb 1-3 tensors.
+- Si uses `Conv1D`/`LSTM`/`GRU`/attention, assegura't que reben tensor 3D; si cal, afegeix `Reshape`.
+- `MultiHeadAttentionKeras` requereix `constructor_params.num_heads` i `key_dim`.
+- No facis `Add` o `Multiply` si les shapes no coincideixen exactament; projecta o concatena.
+- No apliquis attention després de `Flatten` o global pooling.
+- Mini schema: used_inputs[{input_layer_name, source_feature_name, shape}], branches[{name, input_source_layer, layers[{type, name, activation?, units?, filters?, kernel_size?, rate?, target_shape?, input_source_feature_maps?, constructor_params?, explicit_input_source_feature_map?}], output_feature_map_name}], merges[{name, type, source_feature_maps, layers_after_merge?, output_feature_map_name}], output_heads[{output_layer_name, maps_to_target_config_name, source_feature_map, units, activation}].
 
 ### Auto-check
 - JSON valid, format coincidix amb num_new_models
@@ -42,6 +47,8 @@ Camps permesos: batch_size, epochs, validation_split, early_stopping_patience, r
 - inputs/outputs consistents, capes suportades
 - 1 canvi estructural + 1 refinament
 - Justifica SL/TB i/o decision_score
+- `merge.source_feature_maps` vs `layer.input_source_feature_maps` ben usats
+- cap `Add`/`Multiply` amb mismatch de shape evident; cap attention sense params mínims
 
 ### Sortida (OBLIGATORIA)
 Return ONLY valid JSON. No extra text.

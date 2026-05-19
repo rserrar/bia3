@@ -28,6 +28,9 @@ available_inputs_contract_json (EXACTE; usa aquests noms i shapes):
 available_outputs_contract_json (EXACTE; usa aquests targets, output_layer_name i units):
 {{available_outputs_contract_json}}
 
+architecture_guide_content:
+{{architecture_guide_content}}
+
 ### Regles estrictes de repair
 1. Repara només la causa de l'error actual.
 2. Mantén `used_inputs` (noms i shapes) tret que l'error sigui exactament allà.
@@ -38,29 +41,51 @@ available_outputs_contract_json (EXACTE; usa aquests targets, output_layer_name 
 6b. Si hi ha dubte entre noms antics i nous, usa EXCLUSIVAMENT els noms d'`available_inputs_contract_json` i `available_outputs_contract_json`.
 7. Si cal simplificar, fes-ho mínimament mantenint l'estructura global.
 8. No facis servir claus legacy (`inputs`, `input_layers`, `shared_backbone`) dins `architecture_definition`.
+9. Si es proporciona `working_model_example_json`, usa'l com a patró preferent de wiring, shapes i noms de feature maps.
+10. Abans de retornar, identifica explícitament quin objecte estava trencat (`used_inputs`, `branches[i].layers[j]`, `merges[k]`, `merges[k].layers_after_merge[m]`, `output_heads[n]`) i corregeix només aquell punt i les seves dependències immediates.
+
+### Procés recomanat de repair
+1. Localitza la capa o bloc exacte que apareix al missatge d'error.
+2. Formula la causa concreta: shape incompatible, camp obligatori absent, rank incorrecte, nom de feature map inexistent, o capes multi-input mal cablejades.
+3. Aplica el canvi mínim possible sobre una còpia del JSON erroni.
+4. Revisa que la reparació no introdueixi una barreja incoherent de camps legacy i camps nous.
+5. Si el problema és de wiring complex, prefereix copiar el patró del `working_model_example_json` o d'`architecture_guide_content` abans que improvisar una topologia nova.
 
 ### Capes suportades i paràmetres mínims
 El model pot usar les següents capes suportades pel runtime de la V3. Cada capa ha de respectar els paràmetres mínims indicats.
 - `Dense`: requereix `units`.
+- `Dropout`: usa `rate`.
+- `SpatialDropout1D`: usa `rate`.
 - `Conv1D`: requereix `kernel_size` i `filters`.
 - `SeparableConv1D`: requereix `kernel_size`, `filters`, i `depth_multiplier` si s'especifica.
 - `LSTM` / `GRU`: requereixen `units`.
 - `Bidirectional`: requereix `wrapped_layer` o `inner_layer` amb `LSTM` o `GRU`.
 - `TimeDistributed`: requereix `wrapped_layer` o `inner_layer`.
 - `AttentionKeras` / `MultiHeadAttentionKeras`: requereixen tensors de rank >=3.
-- `Add` / `Multiply` / `Concatenate`: requereixen `input_source_feature_maps` amb >=2 tensors.
+- `Add` / `Multiply` / `Concatenate` dins `branches[].layers[]` o `merges[].layers_after_merge[]`: requereixen `input_source_feature_maps` amb >=2 tensors.
+- `merges[]`: requereixen `source_feature_maps` amb >=2 tensors.
 - `MaxPooling1D` / `AveragePooling1D` / `GlobalMaxPooling1D` / `GlobalAveragePooling1D` / `Flatten`.
 - `RepeatVector`, `GaussianNoise`, `Masking`, `Activation`, `Softmax`, `ReLU`, `LeakyReLU`, `PReLU`, `ELU`.
 - `BatchNormalization`, `LayerNormalization`, `Reshape`, `LambdaSlice`.
+- `Reshape`: usa `target_shape`.
+- `MaxPooling1D` / `AveragePooling1D`: si s'especifiquen, usa `pool_size`.
+- `Activation`: si s'usa com a capa explícita, defineix `activation_function`.
+- `MultiHeadAttentionKeras`: defineix `constructor_params.num_heads` i `constructor_params.key_dim`.
+- Consulta `architecture_guide_content` per patrons vàlids de CNN, RNN, attention, residuals i fusions multi-branca.
 
 ### Errors comuns i solucions
 - Si l'error és de dimensió, comprova si `Conv1D`, `LSTM`, `GRU`, `AttentionKeras` o `MultiHeadAttentionKeras` requereixen tensors de rank >=3.
 - Si el model usa `TimeDistributed`, comprova que el `wrapped_layer` o `inner_layer` sigui una capa suportada i vàlida.
 - Si el model usa `Bidirectional`, comprova que el `wrapped_layer` o `inner_layer` sigui `LSTM` o `GRU`.
-- Si el model usa `Add`, `Multiply` o `Concatenate`, comprova que `input_source_feature_maps` sigui una llista amb almenys 2 tensors vàlids.
+- Si el model usa `Add`, `Multiply` o `Concatenate` dins una capa, comprova que `input_source_feature_maps` sigui una llista amb almenys 2 tensors vàlids.
+- Si el model usa `merges`, comprova que cada merge tingui `source_feature_maps` com a llista no buida.
 - Si el model falla per incompatibilitat d'inputs, mantén `used_inputs` amb els noms i shapes exactes de `available_inputs_contract_json`.
 - Si el model falla per `output_heads`, mantén `maps_to_target_config_name` i `units` segons `available_outputs_contract_json`.
 - Si hi ha dubte entre noms antics i nous, usa exclusivament els noms d'`available_inputs_contract_json` i `available_outputs_contract_json`.
+- Si l'error diu `incompatible shapes` en `Add` o `Multiply`, no forcis el merge: iguala dimensions amb una projecció compatible (`Dense`, `Reshape`, pooling, o simplifica el wiring) abans d'intentar combinar tensors.
+- Si l'error diu que `MultiHeadAttentionKeras` o `AttentionKeras` no tenen fonts d'entrada, afegeix `input_source_feature_maps` amb 1-3 mapes vàlids segons el cas.
+- Si una branca amb `Conv1D`, `LSTM`, `GRU` o attention rep un tensor 2D, afegeix `Reshape` o reusa un feature map 3D compatible en lloc d'improvisar capes noves.
+- Si hi ha dubte de wiring, prefereix una reparació conservadora: elimina només el bloc defectuós o substitueix-lo per un patró equivalent més simple però compatible.
 
 ### Guardrails d'arquitectura
 - `architecture_definition` obligatori.
@@ -68,8 +93,11 @@ El model pot usar les següents capes suportades pel runtime de la V3. Cada capa
 - `branches` obligatori i no buit.
 - `output_heads` obligatori i no buit.
 - `Dense` requereix `units`; `Conv1D` requereix `kernel_size`; `GRU/LSTM` requereixen `units`.
-- `Add`/`Multiply`/`Concatenate` requereixen `input_source_feature_maps` >=2.
+- `Add`/`Multiply`/`Concatenate` dins capes requereixen `input_source_feature_maps` >=2.
 - Si existeix `merges`, cada merge ha de tenir `source_feature_maps` (llista no buida).
+- `AttentionKeras` i `MultiHeadAttentionKeras` dins capes requereixen `input_source_feature_maps` no buit.
+- No barregis `input_source_feature_maps` i `source_feature_maps` al mateix objecte.
+- Si la capa és `Add` o `Multiply`, les entrades han de tenir la mateixa forma; si la capa és `Concatenate`, només poden diferir a l'eix de concatenació.
 
 ### Mini schema obligatori (V3)
 `model_definition_full.architecture_definition` ha de tenir com a mínim:
@@ -111,6 +139,10 @@ Verifica internament:
 - capes suportades
 - que el JSON parseja correctament en un parser JSON estàndard
 - que no hi ha claus legacy prohibides
+- que cada `merge` usa `source_feature_maps`
+- que cada capa multi-input usa `input_source_feature_maps`
+- que no hi ha atenció o `Add`/`Multiply` amb fonts absents
+- que no hi ha incompatibilitats evidents de shape en residuals o gates
 
 ### Sortida (OBLIGATÒRIA)
 Return ONLY one valid JSON object (single object, not an array/list). Do not include any extra text.
