@@ -24,8 +24,14 @@ genealogy_case_studies:
 available_inputs_description:
 {{available_inputs_description}}
 
+available_inputs_contract_json:
+{{available_inputs_contract_json}}
+
 available_outputs_description:
 {{available_outputs_description}}
+
+available_outputs_contract_json:
+{{available_outputs_contract_json}}
 
 architecture_guide_content:
 {{architecture_guide_content}}
@@ -39,6 +45,7 @@ architecture_guide_content:
 6. Si dubtes d'schema o consistència, simplifica; si dubtes de competitivitat, prefereix canvi estructural justificat.
 7. Penalitza repetir mateix kind/estratègia de fusió/família de solució quan el context indiqui saturació o manca de breakthroughs.
 8. Pots reaprofitar idees de models antics forts, però evita clonar famílies saturades; combina patrons de fonts diferents quan sigui possible.
+9. No inventis capes, merge types ni noms d'inputs/outputs que no existeixin al contracte; si tens dubtes, usa només els valors literals de `available_inputs_contract_json` i `available_outputs_contract_json`.
 
 ### Procés mental recomanat
 1. Llegeix primer `best_models_global`, `metrics_summary`, `exploration_hints` i `genealogy_case_studies` abans de dissenyar res.
@@ -69,6 +76,7 @@ El model pot usar les següents capes suportades pel runtime de la V3. Cada capa
 - `MaxPooling1D` / `AveragePooling1D`: si s'especifiquen, usa `pool_size`.
 - `Activation`: si s'usa com a capa explícita, defineix `activation_function`.
 - `MultiHeadAttentionKeras`: defineix `constructor_params.num_heads` i `constructor_params.key_dim`.
+- Tipus NO permesos: qualsevol capa o merge type que no estigui a la llista suportada. Exemples incorrectes: `Subtract`, `ModulatedFusion`, `CrossAttention`, `ResidualBlock`.
 - Consulta `architecture_guide_content` per exemples funcionals amb CNN, RNN, attention, fusió multi-branca i regularització.
 
 ### Regles de format i consistència
@@ -77,6 +85,8 @@ El model pot usar les següents capes suportades pel runtime de la V3. Cada capa
 - Si `num_new_models>1`, retorna `{ "candidates": [ ... ] }` amb exactament `num_new_models` elements.
 - No emboliquis la resposta dins de markdown ni blocs de codi.
 - Utilitza noms d'inputs i targets exclusivament dels `available_inputs_description` i `available_outputs_description`.
+- Per `used_inputs`, copia literalment `input_layer_name`, `source_feature_name` i `shape` des d'`available_inputs_contract_json`.
+- Per `output_heads`, copia literalment `maps_to_target_config_name`, `output_layer_name` i `units` des d'`available_outputs_contract_json`.
 
 ### Camps obligatoris de context experimental
 Has de retornar aquests camps dins `model_definition_full`:
@@ -141,8 +151,11 @@ Has de retornar aquests camps dins `model_definition_full`:
 - Cada item de `merges` ha de tenir `name`, `type`, `source_feature_maps` (llista no buida) i `output_feature_map_name`.
 - No inventis noms d'inputs fora de `available_inputs_description`.
 - No inventis targets fora de `available_outputs_description`.
+- `used_inputs[]` han de coincidir exactament amb alguna entrada d'`available_inputs_contract_json`.
+- `output_heads[]` han de coincidir exactament amb alguna entrada d'`available_outputs_contract_json` pel que fa a `maps_to_target_config_name`, `output_layer_name` i `units`.
 - `Add`/`Multiply`/`Concatenate` dins capes requereixen `input_source_feature_maps` amb >=2 tensors.
 - `merges[]` requereixen `source_feature_maps` amb >=2 tensors.
+- `merges[].type` ha de ser només `concatenate`, `add` o `multiply`.
 - `AttentionKeras`/`MultiHeadAttentionKeras` requereixen tensors de rank >=3.
 - `AttentionKeras`/`MultiHeadAttentionKeras` dins capes requereixen `input_source_feature_maps` no buit.
 - `TimeDistributed` només amb inner layer suportada (ex. Dense).
@@ -228,6 +241,8 @@ Verifica internament:
 - que no hi ha `MultiHeadAttentionKeras` sense `constructor_params.num_heads` i `key_dim`
 - que no hi ha `Add`/`Multiply` amb shapes incompatibles evidents
 - que no hi ha capes seqüencials/atenció rebent tensors 2D quan necessiten 3D
+- que no hi ha capes o merges inventats fora del catàleg suportat
+- que cada `used_input` i cada `output_head` respecten literalment els contracts JSON
 
 ### Sortida (OBLIGATÒRIA) — LLEGEIX AIXO PRIMER
 Return ONLY valid JSON. Do not include any extra text.

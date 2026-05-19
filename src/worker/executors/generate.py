@@ -125,6 +125,40 @@ def _outputs_description_from_config(config: dict[str, Any]) -> str:
     return "\n".join(rows) if rows else "No output targets config available"
 
 
+def _inputs_contract_json_from_config(config: dict[str, Any]) -> str:
+    contract: list[dict[str, Any]] = []
+    for item in _as_list_of_dicts(config.get("input_features_config")):
+        source = str(item.get("feature_name", "")).strip()
+        layer = str(item.get("default_input_layer_name", "")).strip()
+        cols = _as_int(item.get("total_columns"), 0)
+        if source and layer and cols > 0:
+            contract.append(
+                {
+                    "source_feature_name": source,
+                    "input_layer_name": layer,
+                    "shape": [cols],
+                }
+            )
+    return json.dumps(contract, ensure_ascii=False, indent=2) if contract else "[]"
+
+
+def _outputs_contract_json_from_config(config: dict[str, Any]) -> str:
+    contract: list[dict[str, Any]] = []
+    for item in _as_list_of_dicts(config.get("output_targets_config")):
+        target = str(item.get("target_name", "")).strip()
+        layer = str(item.get("default_output_layer_name", "")).strip()
+        cols = _as_int(item.get("total_columns"), 0)
+        if target and layer and cols > 0:
+            contract.append(
+                {
+                    "maps_to_target_config_name": target,
+                    "output_layer_name": layer,
+                    "units": cols,
+                }
+            )
+    return json.dumps(contract, ensure_ascii=False, indent=2) if contract else "[]"
+
+
 def _render_prompt_template(template: str, context: dict[str, Any]) -> tuple[str, list[str]]:
     out = template
     for key, value in context.items():
@@ -222,6 +256,8 @@ def _build_prompt_context_from_payload(payload: dict[str, Any], target_candidate
         "num_new_models": str(max(1, target_candidates)),
         "available_inputs_description": available_inputs_description,
         "available_outputs_description": available_outputs_description,
+        "available_inputs_contract_json": _inputs_contract_json_from_config(_as_dict(prompt_context.get("experiment_config")) or experiment),
+        "available_outputs_contract_json": _outputs_contract_json_from_config(_as_dict(prompt_context.get("experiment_config")) or experiment),
         "architecture_guide_content": architecture_guide_content,
         "genealogy_case_studies": str(prompt_context.get("genealogy_case_studies", "")),
         "best_performing_models_json": "[]",
