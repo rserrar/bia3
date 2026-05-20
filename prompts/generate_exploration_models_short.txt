@@ -9,6 +9,7 @@ best_models_global: {{best_models_global_json}}
 metrics_summary: {{metrics_summary}}
 exploration_hints: {{exploration_hints}}
 genealogy_case_studies: {{genealogy_case_studies}}
+conversation_history_summary: {{conversation_history_summary}}
 available_inputs_description: {{available_inputs_description}}
 available_inputs_contract_json: {{available_inputs_contract_json}}
 available_outputs_description: {{available_outputs_description}}
@@ -19,7 +20,7 @@ architecture_guide_content: {{architecture_guide_content}}
 1. NOVE STAT BUDGET: almenys 1 canvi estructural fort + 1 refinament.
 2. Canvi estructural = topologia nova (fusio, branques, atencio). No valen units/dropout sols.
 3. Justifica: com millora SL/TB i/o decision_score versus referencies.
-4. No repeteixis patrons satured (consulta conversation_history).
+4. No repeteixis patrons satured (consulta `conversation_history_summary`).
 5. Reutilitza idees que van funcionar, adapta-les, no copiis.
 6. No inventis capes, merge types ni noms d'inputs/outputs fora dels contracts JSON.
 

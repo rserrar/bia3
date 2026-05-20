@@ -21,6 +21,9 @@ exploration_hints:
 genealogy_case_studies:
 {{genealogy_case_studies}}
 
+conversation_history_summary:
+{{conversation_history_summary}}
+
 available_inputs_description:
 {{available_inputs_description}}
 
@@ -46,9 +49,11 @@ architecture_guide_content:
 7. Penalitza repetir mateix kind/estratègia de fusió/família de solució quan el context indiqui saturació o manca de breakthroughs.
 8. Pots reaprofitar idees de models antics forts, però evita clonar famílies saturades; combina patrons de fonts diferents quan sigui possible.
 9. No inventis capes, merge types ni noms d'inputs/outputs que no existeixin al contracte; si tens dubtes, usa només els valors literals de `available_inputs_contract_json` i `available_outputs_contract_json`.
+10. Usa `conversation_history_summary` per evitar repetir línies de recerca, combinacions de branques o hipòtesis que ja s'han provat sense èxit.
 
 ### Procés mental recomanat
 1. Llegeix primer `best_models_global`, `metrics_summary`, `exploration_hints` i `genealogy_case_studies` abans de dissenyar res.
+1b. Llegeix `conversation_history_summary` i descarta patrons que ja constin com a repetits, estancats o poc útils.
 2. Formula una hipòtesi principal concreta: quin mecanisme nou hauria de millorar SL/TB o `decision_score`.
 3. Decideix quines entrades, branques i fusions són realment necessàries per validar aquesta hipòtesi.
 4. Construeix el JSON comprovant wiring i shapes capa per capa, no només la idea general.

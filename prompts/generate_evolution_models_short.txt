@@ -9,6 +9,7 @@ family_models_json: {{family_models_json}}
 best_performing_models_json: {{best_performing_models_json}}
 num_best_models_considered: {{num_best_models_considered}}
 genealogy_case_studies: {{genealogy_case_studies}}
+conversation_history_summary: {{conversation_history_summary}}
 family_metrics_summary: {{family_metrics_summary}}
 metrics_summary: {{metrics_summary}}
 improvement_focus: {{improvement_focus}}
@@ -22,7 +23,7 @@ architecture_guide_content: {{architecture_guide_content}}
 1. Mutacio incremental: 1 canvi estructural moderat + 1 refinament. No redisseny forts.
 2. Potencia la varietat: considera tambe canviar quines entrades s'usen (afegir/treure features com volum), modificar sortides auxiliars, o variar la profunditat/complexitat de les capes. No et limitis a nomes canvis topologics.
 3. Justifica: com la mutacio millora SL/TB i/o decision_score versus el pare i referencies fortes de familia.
-4. Consulta conversation_history per evitar repetir patrons ja provats sense exit.
+4. Consulta `conversation_history_summary` per evitar repetir patrons ja provats sense exit.
 5. Reutilitza mecanismes que van funcionar en iteracions anteriors.
 6. Si el pare no usa volum o altres features disponibles, considera afegir-les si poden aportar informacio predictiva.
 7. No inventis capes, merge types ni noms d'inputs/outputs fora dels contracts JSON.

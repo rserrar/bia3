@@ -21,6 +21,9 @@ improvement_focus:
 genealogy_case_studies:
 {{genealogy_case_studies}}
 
+conversation_history_summary:
+{{conversation_history_summary}}
+
 available_inputs_description:
 {{available_inputs_description}}
 
@@ -50,6 +53,7 @@ architecture_guide_content:
 7. Si dubtes d'schema o consistència, simplifica; si dubtes de competitivitat, escull el refinament amb més potencial explicable.
 8. Si una proposta implica salt arquitectònic fort, NO és evolution: reconduir-la a mutació incremental.
 9. No inventis capes, merge types ni noms d'inputs/outputs que no existeixin al contracte; si tens dubtes, usa només els valors literals de `available_inputs_contract_json` i `available_outputs_contract_json`.
+10. Usa `conversation_history_summary` per evitar repetir mutacions, recomanacions o hipòtesis de família que ja s'han provat sense resultat.
 
 ### Capes suportades i paràmetres mínims
 El model pot usar les següents capes suportades pel runtime de la V3. Cada capa ha de respectar els paràmetres mínims indicats.
@@ -87,6 +91,7 @@ El model pot usar les següents capes suportades pel runtime de la V3. Cada capa
 
 ### Procés mental recomanat
 1. Llegeix primer el `parent_model`, `family_models`, `family_metrics_summary` i `genealogy_case_studies` abans de dissenyar res.
+1b. Llegeix `conversation_history_summary` i evita repetir patrons que la família ja hagi descartat o esgotat.
 2. Formula una hipòtesi principal breu i atribuïble: quin canvi hauria de millorar SL/TB o decision_score.
 3. Decideix explícitament què mantens del parent perquè ja funciona, i què canvies perquè sospites que és el coll d'ampolla.
 4. Dissenya la mutació més petita possible que permeti validar aquesta hipòtesi.

@@ -31,6 +31,14 @@ Small operational log to correlate behavior changes with deploy moments.
   - `prompts/generate_evolution_models_short.txt`
   - added stronger construction-time guidance for rank/shape compatibility, attention-before-pooling, residual/add/multiply safety, and explicit distinction between `source_feature_maps` (`merges[]`) and `input_source_feature_maps` (multi-input layers).
 
+- **Generation prompts now consume conversation history explicitly**:
+  - `src/worker/executors/generate.py`
+  - `prompts/generate_exploration_models.txt`
+  - `prompts/generate_evolution_models.txt`
+  - `prompts/generate_exploration_models_short.txt`
+  - `prompts/generate_evolution_models_short.txt`
+  - adds `conversation_history_summary` to generation-time prompt context so the LLM can avoid repeating failed family hypotheses and reuse successful lines more deliberately.
+
 - **Expected rollout effect**:
   - more architectural variety in generated candidates,
   - especially in notebook flows that use short prompts when `conversation_history` is present,

@@ -273,6 +273,7 @@ def _build_prompt_context_from_payload(payload: dict[str, Any], target_candidate
         "parent_model_json": _to_json_text(prompt_context.get("parent_model")),
         "family_metrics_summary": _to_json_text(prompt_context.get("family_metrics_summary", {})),
         "metrics_summary": _to_json_text(prompt_context.get("metrics_summary", {})),
+        "conversation_history_summary": str(prompt_context.get("conversation_history_summary", "")).strip(),
         "context_selection_summary": str(prompt_context.get("context_selection_summary", "")),
     }
 
