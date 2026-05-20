@@ -63,6 +63,7 @@ architecture_guide_content:
 - Nomes pots referenciar `feature_maps` que ja existeixin explicitament en aquell punt del graf.
 - Fonts valides per referencies internes: `used_inputs[].input_layer_name`, `branches[].output_feature_map_name`, `merges[].output_feature_map_name`, o `layers[].name` / `layers_after_merge[].name` ja definits abans.
 - No inventis noms intermedis de gates o projections (`gw_*`, `gate_weights_*`, etc.) si no hi ha una capa real anterior amb aquest `name`.
+- No indexis ni descomposis tensors implícitament en noms nous (`foo_0`, `foo_1`, `gate_weights_0`, `gate_weights_1`, etc.) si aquests `feature_maps` exactes no s'han creat abans.
 - `input_source_layer` d'una branca ha de ser un sol nom de `feature_map` existent; no pot ser `None`, buit, ni una llista.
 - Si vols combinar diverses fonts, fes-ho amb branques separades + `merges[]`, no passant una llista directament com a input de branca.
 - Cada merge ha de tenir sempre `output_feature_map_name` no buit i unic.
@@ -82,6 +83,7 @@ El model pot usar les següents capes suportades pel runtime de la V3. Cada capa
 - `Add` / `Multiply` / `Concatenate` dins `branches[].layers[]` o `merges[].layers_after_merge[]`: requereixen `input_source_feature_maps` amb >=2 tensors.
 - `AttentionKeras`: dins capes, requereix `input_source_feature_maps` amb 2-3 tensors 3D.
 - `MultiHeadAttentionKeras`: dins capes, requereix `input_source_feature_maps` amb 1-3 tensors 3D.
+- Si uses `MultiHeadAttentionKeras`, defineix sempre `input_source_feature_maps` de manera explícita; si no tens clar query/value/key, no usis atenció i substitueix-la per `concatenate + Dense`.
 - `merges[]`: requereixen `source_feature_maps` amb >=2 tensors.
 - `MaxPooling1D` / `AveragePooling1D` / `GlobalMaxPooling1D` / `GlobalAveragePooling1D` / `Flatten`.
 - `RepeatVector`, `GaussianNoise`, `Masking`, `Activation`, `Softmax`, `ReLU`, `LeakyReLU`, `PReLU`, `ELU`.
@@ -184,6 +186,7 @@ Has de retornar aquests camps dins `model_definition_full`:
 - Si proposes attention o residuals complexos, prefereix copiar un patró funcional d'`architecture_guide_content` abans que improvisar wiring nou.
 - Per defecte, prefereix `concatenate` simple; usa `multiply` o `add` nomes si pots verificar clarament tots els tensors i les seves shapes.
 - Si uses gating multiplicatiu, evita crear pesos de gate amb noms implicits; defineix una capa real amb `name` i reutilitza nomes aquest `feature_map` existent.
+- No inventis sufixos `_proj`, `_weights`, `_gated` o similars si la projecció o el gate no s'han creat abans com a capes reals.
 - Si uses `Reshape`, la nova shape ha de ser compatible amb el nombre total d'elements del tensor d'entrada; no improvisis dimensions arbitraries.
 - Evita branques `range` ambigües amb inputs compostos; si necessites `min` i `max`, prefereix branques separades i una fusio explicita posterior.
 
@@ -265,6 +268,8 @@ Verifica internament:
 - que cap branca usa `input_source_layer=None`, buit o una llista
 - que cap merge deixa `output_feature_map_name` buit
 - que cap `Reshape` canvia el nombre total d'elements de manera incompatible
+- que no hi ha referències indexades o sufixades (`*_0`, `*_1`, `*_proj`, `*_weights`) sense definició real prèvia
+- que qualsevol `MultiHeadAttentionKeras` té `input_source_feature_maps` no buit i verificable
 
 ### Sortida (OBLIGATÒRIA) — LLEGEIX AIXO PRIMER
 Return ONLY valid JSON. Do not include any extra text.

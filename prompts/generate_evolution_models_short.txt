@@ -48,8 +48,10 @@ Camps permesos: batch_size, epochs, validation_split, early_stopping_patience, r
 - `merges[]` usa `source_feature_maps`; capes multi-input dins branches o `layers_after_merge` usen `input_source_feature_maps`.
 - nomes pots referenciar `feature_maps` ja creats abans (`used_inputs.input_layer_name`, `output_feature_map_name`, o `name` d'una capa real).
 - no inventis noms intermedis tipus `gw_*` o `gate_weights_*` si no existeixen com a capes reals anteriors.
+- no indexis o descomposis tensors implícitament en noms nous (`*_0`, `*_1`, `gate_weights_0`, etc.) si no existeixen com a `feature_maps` reals previs.
 - cada merge ha de tenir `output_feature_map_name` no buit i unic.
 - `AttentionKeras` usa `input_source_feature_maps` amb 2-3 tensors; `MultiHeadAttentionKeras` amb 1-3 tensors.
+- si uses `MultiHeadAttentionKeras`, posa sempre `input_source_feature_maps`; si no tens clar query/value/key, millor `concatenate + Dense`.
 - `merges[].type` nomes pot ser `concatenate`, `add` o `multiply`.
 - Si uses `Conv1D`/`LSTM`/`GRU`/attention, assegura't que reben tensor 3D; si cal, afegeix `Reshape`.
 - `MultiHeadAttentionKeras` requereix `constructor_params.num_heads` i `key_dim`.
@@ -57,6 +59,7 @@ Camps permesos: batch_size, epochs, validation_split, early_stopping_patience, r
 - No apliquis attention després de `Flatten` o global pooling.
 - amb `Reshape`, conserva el nombre total d'elements; no improvisis shapes.
 - prefereix `concatenate` simple; usa gates amb `multiply` nomes si tots els tensors estan clarament definits.
+- no inventis sufixos `_proj`, `_weights`, `_gated` si no existeixen com a capes reals anteriors.
 - Mini schema: used_inputs[{input_layer_name, source_feature_name, shape}], branches[{name, input_source_layer, layers[{type, name, activation?, units?, filters?, kernel_size?, rate?, target_shape?, input_source_feature_maps?, constructor_params?, explicit_input_source_feature_map?}], output_feature_map_name}], merges[{name, type, source_feature_maps, layers_after_merge?, output_feature_map_name}], output_heads[{output_layer_name, maps_to_target_config_name, source_feature_map, units, activation}].
 
 ### Auto-check
@@ -70,6 +73,7 @@ Camps permesos: batch_size, epochs, validation_split, early_stopping_patience, r
 - cap `Add`/`Multiply` amb mismatch de shape evident; cap attention sense params mínims
 - cap capa o merge inventat; contracts d'inputs/outputs respectats literalment
 - cap referencia interna a `feature_map` inexistent; cap merge sense `output_feature_map_name`
+- cap referencia indexada o sufixada sense definició real; cap `MultiHeadAttentionKeras` sense fonts explícites
 
 ### Sortida (OBLIGATORIA)
 Return ONLY valid JSON. No extra text. No prefix/suffix.

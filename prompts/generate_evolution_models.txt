@@ -291,6 +291,8 @@ Verifica internament:
 - que cap branca usa `input_source_layer=None`, buit o una llista
 - que cap merge deixa `output_feature_map_name` buit
 - que cap `Reshape` canvia el nombre total d'elements de manera incompatible
+- que no hi ha referències indexades o sufixades (`*_0`, `*_1`, `*_proj`, `*_weights`) sense definició real prèvia
+- que qualsevol `MultiHeadAttentionKeras` té `input_source_feature_maps` no buit i verificable
 
 ### Sortida (OBLIGATÒRIA) — LLEGEIX AIXO PRIMER
 Return ONLY valid JSON. Do not include any extra text.
