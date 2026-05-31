@@ -4,6 +4,7 @@ import multiprocessing as mp
 import tempfile
 import os
 import json
+import traceback
 from uuid import uuid4
 from typing import Any, cast
 
@@ -50,11 +51,14 @@ def _execute_task_in_subprocess(task: dict[str, Any], result_file_path: str) -> 
     try:
         payload = {"ok": True, "result": execute_task(task)}
     except Exception as error:
+        tb = traceback.format_exc()
         payload = {
             "ok": False,
             "error": {
                 "error_type": "worker_subprocess_exception",
                 "error_message": str(error),
+                "exception_class": error.__class__.__name__,
+                "traceback": tb,
                 "retryable": True,
             },
         }
@@ -218,11 +222,20 @@ def run_worker_loop() -> None:
                         result = raw_result
                 else:
                     raw_error = subprocess_result.get("error")
-                    error_payload = raw_error if isinstance(raw_error, dict) else {
-                        "error_type": "worker_subprocess_exception",
-                        "error_message": "worker subprocess failed",
-                        "retryable": True,
-                    }
+                    if isinstance(raw_error, dict):
+                        error_payload = raw_error
+                    else:
+                        exitcode = task_process.exitcode
+                        exit_note = f" (exitcode={exitcode})" if exitcode is not None else ""
+                        likely_reason = ""
+                        if exitcode is not None and exitcode < 0:
+                            likely_reason = " possible hard crash/OOM or external kill"
+                        error_payload = {
+                            "error_type": "worker_subprocess_exception",
+                            "error_message": f"worker subprocess failed{exit_note}{likely_reason}",
+                            "process_exitcode": exitcode,
+                            "retryable": True,
+                        }
                     result = {
                         "status": "failed",
                         "error": error_payload,
@@ -238,12 +251,22 @@ def run_worker_loop() -> None:
 
             idem_key = f"{task_id}:{attempt}:{uuid4().hex[:8]}"
             if str(result.get("status", "completed")) == "failed":
-                error_payload = result.get("error") if isinstance(result.get("error"), dict) else {
+                raw_result_error = result.get("error")
+                error_payload: dict[str, Any] = raw_result_error if isinstance(raw_result_error, dict) else {
                     "error_type": "execution_error",
                     "error_message": "task failed",
                     "retryable": False,
                 }
                 print(f"[INFO] Sending fail -> server task_id={task_id}", flush=True)
+                print(
+                    "[WARN] Fail payload "
+                    f"task_id={task_id} error_type={error_payload.get('error_type')} "
+                    f"message={error_payload.get('error_message')}",
+                    flush=True,
+                )
+                tb = error_payload.get("traceback")
+                if isinstance(tb, str) and tb.strip() != "":
+                    print(tb, flush=True)
                 client.fail(
                     task_id,
                     {
