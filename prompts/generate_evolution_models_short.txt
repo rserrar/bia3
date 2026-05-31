@@ -57,6 +57,7 @@ Camps permesos: batch_size, epochs, validation_split, early_stopping_patience, r
 - cada merge ha de tenir `output_feature_map_name` no buit i unic.
 - `AttentionKeras` usa `input_source_feature_maps` amb 2-3 tensors; `MultiHeadAttentionKeras` amb 1-3 tensors.
 - si uses `MultiHeadAttentionKeras`, posa sempre `input_source_feature_maps`; si no tens clar query/value/key, millor `concatenate + Dense`.
+- no facis attention directa sobre seqüències crues de `800`; redueix primer la longitud.
 - `merges[].type` nomes pot ser `concatenate`, `add` o `multiply`.
 - Si uses `Conv1D`/`LSTM`/`GRU`/attention, assegura't que reben tensor 3D; si cal, afegeix `Reshape`.
 - `MultiHeadAttentionKeras` requereix `constructor_params.num_heads` i `key_dim`.
@@ -64,6 +65,7 @@ Camps permesos: batch_size, epochs, validation_split, early_stopping_patience, r
 - No apliquis attention després de `Flatten` o global pooling.
 - amb `Reshape`, conserva el nombre total d'elements; no improvisis shapes.
 - prefereix `concatenate` simple; usa gates amb `multiply` nomes si tots els tensors estan clarament definits.
+- en general, `SL/TP only` o `SL/TP + reconstruction` estan sent més robustos que variants massa carregades.
 - no inventis sufixos `_proj`, `_weights`, `_gated` si no existeixen com a capes reals anteriors.
 - Mini schema: used_inputs[{input_layer_name, source_feature_name, shape}], branches[{name, input_source_layer, layers[{type, name, activation?, units?, filters?, kernel_size?, rate?, target_shape?, input_source_feature_maps?, constructor_params?, explicit_input_source_feature_map?}], output_feature_map_name}], merges[{name, type, source_feature_maps, layers_after_merge?, output_feature_map_name}], output_heads[{output_layer_name, maps_to_target_config_name, source_feature_map, units, activation}].
 

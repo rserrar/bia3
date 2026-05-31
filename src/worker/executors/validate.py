@@ -17,6 +17,8 @@ SUPPORTED_LAYER_TYPES = {
     "Add", "Multiply", "Concatenate", "AttentionKeras", "MultiHeadAttentionKeras",
 }
 
+ATTENTION_MAX_RAW_SEQUENCE_LEN = 512
+
 
 def _as_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
@@ -41,6 +43,71 @@ def _layer_kind(layer: dict[str, Any]) -> str:
     if kind is None:
         kind = layer.get("layer_type")
     return str(kind or "").strip()
+
+
+def _as_positive_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, float) and value.is_integer() and value > 0:
+        return int(value)
+    return None
+
+
+def _estimate_input_sequence_len(used_inputs: list[dict[str, Any]]) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for inp in used_inputs:
+        input_name = str(inp.get("input_layer_name", "")).strip()
+        shape = inp.get("shape")
+        if not input_name or not isinstance(shape, list) or len(shape) == 0:
+            continue
+        seq_len = _as_positive_int(shape[0])
+        if seq_len is not None:
+            out[input_name] = seq_len
+    return out
+
+
+def _branch_attention_sequence_len_errors(architecture: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    input_seq_len = _estimate_input_sequence_len(_as_list_of_dicts(architecture.get("used_inputs")))
+
+    for branch_idx, branch in enumerate(_as_list_of_dicts(architecture.get("branches"))):
+        branch_input = str(branch.get("input_source_layer", branch.get("input_layer_name", ""))).strip()
+        current_seq_len = input_seq_len.get(branch_input)
+
+        for layer_idx, layer in enumerate(_as_list_of_dicts(branch.get("layers"))):
+            kind = _layer_kind(layer)
+
+            if kind == "Reshape":
+                target_shape = layer.get("target_shape")
+                if isinstance(target_shape, list) and len(target_shape) >= 1:
+                    reshaped_len = _as_positive_int(target_shape[0])
+                    if reshaped_len is not None:
+                        current_seq_len = reshaped_len
+                continue
+
+            if kind in {"Conv1D", "SeparableConv1D"}:
+                continue
+
+            if kind in {"MaxPooling1D", "AveragePooling1D"}:
+                pool_size = _as_positive_int(layer.get("pool_size")) or 2
+                if current_seq_len is not None:
+                    current_seq_len = max(1, current_seq_len // pool_size)
+                continue
+
+            if kind in {"GlobalMaxPooling1D", "GlobalAveragePooling1D", "Flatten"}:
+                current_seq_len = None
+                continue
+
+            if kind in {"AttentionKeras", "MultiHeadAttentionKeras"}:
+                if current_seq_len is not None and current_seq_len >= ATTENTION_MAX_RAW_SEQUENCE_LEN:
+                    errors.append(
+                        f"branches[{branch_idx}].layers[{layer_idx}] ({kind}) cannot be applied directly on long raw sequence length {current_seq_len}; downsample, pool, or compress first"
+                    )
+                continue
+
+    return errors
 
 
 def _collect_potential_feature_maps(architecture: dict[str, Any]) -> set[str]:
@@ -279,6 +346,8 @@ def validate_model_definition_schema(model_definition_full: dict[str, Any]) -> l
         source_feature_map = str(head.get("source_feature_map", "")).strip()
         if source_feature_map and source_feature_map not in known_feature_maps and source_feature_map not in potential_feature_maps:
             errors.append(f"output_heads[{head_idx}] references unknown source_feature_map '{source_feature_map}'")
+
+    errors.extend(_branch_attention_sequence_len_errors(architecture))
 
     return errors
 
