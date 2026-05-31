@@ -55,6 +55,12 @@ architecture_guide_content:
 9. No inventis capes, merge types ni noms d'inputs/outputs que no existeixin al contracte; si tens dubtes, usa només els valors literals de `available_inputs_contract_json` i `available_outputs_contract_json`.
 10. Usa `conversation_history_summary` per evitar repetir mutacions, recomanacions o hipòtesis de família que ja s'han provat sense resultat.
 
+### Política de sortides
+- `stop_loss_prediction` i `take_profit_prediction` són obligatories a tots els candidats.
+- Recomanació general: si afegeixes auxiliars, prova com a màxim una família auxiliar principal per candidat: o bé `min_7_days_prediction`/`max_7_days_prediction`, o bé `reconstruct_prices_last_100_target`.
+- Barrejar alhora `min/max 7d`, reconstrucció i moltes altres auxiliars s'ha provat poques vegades i, en els casos vistos fins ara, no ha donat bons resultats; tendeix a diluir el focus sobre `SL/TB`.
+- Si no tens una hipòtesi clara sobre l'ajuda de les auxiliars, prefereix `SL/TP` sols o `SL/TP + 1` auxiliar principal.
+
 ### Capes suportades i paràmetres mínims
 El model pot usar les següents capes suportades pel runtime de la V3. Cada capa ha de respectar els paràmetres mínims indicats.
 - `Dense`: requereix `units`.

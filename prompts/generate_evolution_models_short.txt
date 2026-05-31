@@ -28,6 +28,11 @@ architecture_guide_content: {{architecture_guide_content}}
 6. Si el pare no usa volum o altres features disponibles, considera afegir-les si poden aportar informacio predictiva.
 7. No inventis capes, merge types ni noms d'inputs/outputs fora dels contracts JSON.
 
+### Sortides
+- `stop_loss_prediction` i `take_profit_prediction` son obligatories.
+- Recomanat: provar com a maxim una auxiliar principal (`min/max 7d` o reconstruccio `last_100`).
+- Barrejar `min/max 7d` + reconstruccio + moltes altres auxiliars s'ha provat poques vegades i, fins ara, no ha sortit be.
+
 ### Capes suportades
 - No et limitis a `Dense`: el runtime suporta tambe `Dropout`, `SpatialDropout1D`, `Conv1D`, `SeparableConv1D`, `LSTM`, `GRU`, `Bidirectional`, `TimeDistributed`, `AttentionKeras`, `MultiHeadAttentionKeras`, `Add`, `Multiply`, `Concatenate`, `BatchNormalization`, `LayerNormalization`, `Reshape`, `LambdaSlice`, `MaxPooling1D`, `AveragePooling1D`, `GlobalMaxPooling1D`, `GlobalAveragePooling1D`, `Flatten`, `RepeatVector`, `GaussianNoise`, `Masking`, `Activation`, `Softmax`, `ReLU`, `LeakyReLU`, `PReLU`, `ELU`.
 - Mantingues la mutacio incremental, pero si la hipotesi ho justifica pots introduir una d'aquestes capes en una branca concreta o en la fusio.

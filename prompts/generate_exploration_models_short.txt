@@ -24,6 +24,11 @@ architecture_guide_content: {{architecture_guide_content}}
 5. Reutilitza idees que van funcionar, adapta-les, no copiis.
 6. No inventis capes, merge types ni noms d'inputs/outputs fora dels contracts JSON.
 
+### Sortides
+- `stop_loss_prediction` i `take_profit_prediction` son obligatories.
+- Recomanat: provar com a maxim una auxiliar principal (`min/max 7d` o reconstruccio `last_100`).
+- Barrejar `min/max 7d` + reconstruccio + moltes altres auxiliars s'ha provat poques vegades i, fins ara, no ha sortit be.
+
 ### Capes suportades
 - No et limitis a `Dense`: el runtime suporta tambe `Dropout`, `SpatialDropout1D`, `Conv1D`, `SeparableConv1D`, `LSTM`, `GRU`, `Bidirectional`, `TimeDistributed`, `AttentionKeras`, `MultiHeadAttentionKeras`, `Add`, `Multiply`, `Concatenate`, `BatchNormalization`, `LayerNormalization`, `Reshape`, `LambdaSlice`, `MaxPooling1D`, `AveragePooling1D`, `GlobalMaxPooling1D`, `GlobalAveragePooling1D`, `Flatten`, `RepeatVector`, `GaussianNoise`, `Masking`, `Activation`, `Softmax`, `ReLU`, `LeakyReLU`, `PReLU`, `ELU`.
 - Tria la capa segons la hipotesi arquitectonica; no assumeixis que una pila `Dense` es l'opcio per defecte.
