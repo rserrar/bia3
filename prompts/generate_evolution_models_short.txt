@@ -34,7 +34,15 @@ architecture_guide_content: {{architecture_guide_content}}
 - Barrejar `min/max 7d` + reconstruccio + moltes altres auxiliars s'ha provat poques vegades i, fins ara, no ha sortit be.
 
 ### Capes suportades
-- No et limitis a `Dense`: el runtime suporta tambe `Dropout`, `SpatialDropout1D`, `Conv1D`, `SeparableConv1D`, `LSTM`, `GRU`, `Bidirectional`, `TimeDistributed`, `AttentionKeras`, `MultiHeadAttentionKeras`, `Add`, `Multiply`, `Concatenate`, `BatchNormalization`, `LayerNormalization`, `Reshape`, `LambdaSlice`, `MaxPooling1D`, `AveragePooling1D`, `GlobalMaxPooling1D`, `GlobalAveragePooling1D`, `Flatten`, `RepeatVector`, `GaussianNoise`, `Masking`, `Activation`, `Softmax`, `ReLU`, `LeakyReLU`, `PReLU`, `ELU`.
+- No et limitis a `Dense`:
+  - **Regularització:** `Dropout`(rate), `SpatialDropout1D`(rate, per a 3D), `AlphaDropout`(rate, després de SELU), `GaussianDropout`(rate), `ActivityRegularization`(l1/l2), `GaussianNoise`(stddev), `BatchNormalization`, `LayerNormalization`.
+  - **Convolucionals 1D:** `Conv1D`(filters,kernel_size), `SeparableConv1D`(filters,kernel_size). Requereixen tensor 3D (ex: Reshape abans si tens 2D).
+  - **Recurrents:** `LSTM`/`GRU`(units), `Bidirectional`(wrapped_layer LSTM/GRU), `TimeDistributed`(wrapped_layer Dense). Requereixen tensor 3D.
+  - **Atenció:** `AttentionKeras`(2-3 tensors 3D), `MultiHeadAttentionKeras`(1-3 tensors 3D, requereix num_heads+key_dim). Redueix la seqüència abans (pooling) si tens >512 steps.
+  - **Pooling/Reducció:** `MaxPooling1D`/`AveragePooling1D`(pool_size), `GlobalMaxPooling1D`/`GlobalAveragePooling1D`, `Flatten`.
+  - **Activacions:** `Activation`, `Softmax`, `ReLU`, `LeakyReLU`, `PReLU`, `ELU`.
+  - **Manipulació de shapes:** `Reshape`(target_shape), `RepeatVector`(n), `LambdaSlice`(slice_params), `Masking`.
+  - **Fusió:** `Add`, `Multiply`, `Concatenate` (dins capes usen `input_source_feature_maps`; dins merges usen `source_feature_maps`).
 - Mantingues la mutacio incremental, pero si la hipotesi ho justifica pots introduir una d'aquestes capes en una branca concreta o en la fusio.
 - Consulta `architecture_guide_content` per exemples funcionals de capes no denses i combinacions multi-branca.
 - Exemples incorrectes / prohibits: `Subtract`, `ModulatedFusion`, `CrossAttention`, `ResidualBlock`.

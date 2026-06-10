@@ -29,6 +29,9 @@ NEW_LAYER_TYPES = {
     "ReLU",
     "Softmax",
     "Masking",
+    "AlphaDropout",
+    "GaussianDropout",
+    "ActivityRegularization",
 }
 
 

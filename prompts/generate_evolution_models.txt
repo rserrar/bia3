@@ -63,14 +63,17 @@ architecture_guide_content:
 
 ### Capes suportades i paràmetres mínims
 El model pot usar les següents capes suportades pel runtime de la V3. Cada capa ha de respectar els paràmetres mínims indicats.
-- `Dense`: requereix `units`.
-- `Dropout`: usa `rate`.
-- `SpatialDropout1D`: usa `rate` i és especialment útil en branques temporals/convolucionals.
-- `Conv1D`: requereix `kernel_size` i `filters`.
-- `SeparableConv1D`: requereix `kernel_size`, `filters`, i `depth_multiplier` si s'especifica.
-- `LSTM` / `GRU`: requereixen `units`.
-- `Bidirectional`: requereix `wrapped_layer` o `inner_layer` amb `LSTM` o `GRU`.
-- `TimeDistributed`: requereix `wrapped_layer` o `inner_layer`.
+- `Dense`: requereix `units`. Capa bàsica fully-connected.
+- `Dropout`: usa `rate`. Regularització per desactivació aleatòria de neurones.
+- `SpatialDropout1D`: usa `rate`. Desactiva canals sencers en tensors 3D; útil en branques temporals/convolucionals.
+- `AlphaDropout`: usa `rate`. Dropout que manté la mitjana i variància de la sortida (ideal després de SELU).
+- `GaussianDropout`: usa `rate`. Multiplica l'entrada per soroll Bernoulli; alternativa estocàstica a Dropout.
+- `ActivityRegularization`: usa `l1` i/o `l2`. Penalitza l'activació directament (no els pesos); útil per esprémer representacions.
+- `Conv1D`: requereix `kernel_size` i `filters`. Detecció de patrons locals en seqüències. Requereix tensor 3D.
+- `SeparableConv1D`: requereix `kernel_size`, `filters` (i opcional `depth_multiplier`). Variant més lleugera de Conv1D, menys paràmetres.
+- `LSTM` / `GRU`: requereixen `units`. Capes recurrents per modelar dependències temporals. GRU és més lleuger; LSTM més expressiu. Requereixen tensor 3D.
+- `Bidirectional`: requereix `wrapped_layer` o `inner_layer` amb `LSTM` o `GRU`. Processa la seqüència en ambdues direccions. Requereix tensor 3D.
+- `TimeDistributed`: requereix `wrapped_layer` o `inner_layer` (ex: `Dense`). Aplica la mateixa capa a cada timestep d'un tensor 3D.
 - `AttentionKeras` / `MultiHeadAttentionKeras`: requereixen tensors de rank >=3.
 - `Add` / `Multiply` / `Concatenate` dins `branches[].layers[]` o `merges[].layers_after_merge[]`: requereixen `input_source_feature_maps` amb >=2 tensors.
 - `AttentionKeras`: dins capes, requereix `input_source_feature_maps` amb 2-3 tensors 3D.
@@ -78,9 +81,9 @@ El model pot usar les següents capes suportades pel runtime de la V3. Cada capa
 - Si uses `MultiHeadAttentionKeras`, defineix sempre `input_source_feature_maps` de manera explícita; si no tens clar query/value/key, no usis atenció i substitueix-la per `concatenate + Dense`.
 - No facis `AttentionKeras` o `MultiHeadAttentionKeras` directament sobre seqüències crues de longitud `800`; primer redueix longitud amb pooling/downsampling o treballa sobre una representació comprimida.
 - `merges[]`: requereixen `source_feature_maps` amb >=2 tensors.
-- `MaxPooling1D` / `AveragePooling1D` / `GlobalMaxPooling1D` / `GlobalAveragePooling1D` / `Flatten`.
-- `RepeatVector`, `GaussianNoise`, `Masking`, `Activation`, `Softmax`, `ReLU`, `LeakyReLU`, `PReLU`, `ELU`.
-- `BatchNormalization`, `LayerNormalization`, `Reshape`, `LambdaSlice`.
+- `MaxPooling1D` / `AveragePooling1D` / `GlobalMaxPooling1D` / `GlobalAveragePooling1D` / `Flatten`: reducció de dimensionalitat temporal. MaxPooling/AveragePooling redueixen amb finestra; Global* redueixen tota la seqüència a 2D; Flatten aplana a 2D.
+- `RepeatVector(n)`, `GaussianNoise(stddev)`, `Masking(mask_value)`, `Activation(funció)`, `Softmax(axis)`, `ReLU(max_value?)`, `LeakyReLU(alpha)`, `PReLU`, `ELU(alpha)`: activacions i transformacions diverses.
+- `BatchNormalization`, `LayerNormalization`, `Reshape(target_shape)`, `LambdaSlice(slice_params)`: normalització i manipulació de tensors. BatchNorm normalitza per batch; LayerNorm per característica (útil en seqüències).
 - `Reshape`: usa `target_shape` per adaptar tensors 2D/3D.
 - `MaxPooling1D` / `AveragePooling1D`: si s'especifiquen, usa `pool_size`.
 - `Activation`: si s'usa com a capa explícita, defineix `activation_function`.

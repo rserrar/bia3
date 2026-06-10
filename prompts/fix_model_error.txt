@@ -55,16 +55,19 @@ architecture_guide_content:
 El model pot usar les següents capes suportades pel runtime de la V3. Cada capa ha de respectar els paràmetres mínims indicats.
 - `Dense`: requereix `units`.
 - `Dropout`: usa `rate`.
-- `SpatialDropout1D`: usa `rate`.
-- `Conv1D`: requereix `kernel_size` i `filters`.
-- `SeparableConv1D`: requereix `kernel_size`, `filters`, i `depth_multiplier` si s'especifica.
-- `LSTM` / `GRU`: requereixen `units`.
+- `SpatialDropout1D`: usa `rate`. Per a tensors 3D.
+- `AlphaDropout`: usa `rate`. Manté mitjana/variància (ideal després de SELU).
+- `GaussianDropout`: usa `rate`. Soroll Bernoulli multiplicatiu.
+- `ActivityRegularization`: usa `l1` i/o `l2`.
+- `Conv1D`: requereix `kernel_size` i `filters`. Requereix tensor 3D.
+- `SeparableConv1D`: requereix `kernel_size`, `filters` (opcional `depth_multiplier`). Variant lleugera de Conv1D.
+- `LSTM` / `GRU`: requereixen `units`. Requereixen tensor 3D.
 - `Bidirectional`: requereix `wrapped_layer` o `inner_layer` amb `LSTM` o `GRU`.
-- `TimeDistributed`: requereix `wrapped_layer` o `inner_layer`.
+- `TimeDistributed`: requereix `wrapped_layer` o `inner_layer` (ex: `Dense`).
 - `AttentionKeras` / `MultiHeadAttentionKeras`: requereixen tensors de rank >=3.
 - `Add` / `Multiply` / `Concatenate` dins `branches[].layers[]` o `merges[].layers_after_merge[]`: requereixen `input_source_feature_maps` amb >=2 tensors.
 - `merges[]`: requereixen `source_feature_maps` amb >=2 tensors.
-- `MaxPooling1D` / `AveragePooling1D` / `GlobalMaxPooling1D` / `GlobalAveragePooling1D` / `Flatten`.
+- `MaxPooling1D` / `AveragePooling1D` / `GlobalMaxPooling1D` / `GlobalAveragePooling1D` / `Flatten`: reducció temporal.
 - `RepeatVector`, `GaussianNoise`, `Masking`, `Activation`, `Softmax`, `ReLU`, `LeakyReLU`, `PReLU`, `ELU`.
 - `BatchNormalization`, `LayerNormalization`, `Reshape`, `LambdaSlice`.
 - `Reshape`: usa `target_shape`.

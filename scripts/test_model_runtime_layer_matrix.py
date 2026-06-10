@@ -326,6 +326,27 @@ def _case_merge_multiply() -> dict[str, Any]:
     )
 
 
+def _case_new_regularization_layers() -> dict[str, Any]:
+    return _base_model(
+        "case_new_regularization_layers",
+        [{"input_layer_name": "in_main", "source_feature_name": "in_main", "shape": [16]}],
+        [
+            {
+                "name": "b_main",
+                "input_source_layer": "in_main",
+                "layers": [
+                    {"type": "AlphaDropout", "rate": 0.1, "name": "ad1"},
+                    {"type": "GaussianDropout", "rate": 0.1, "name": "gd1"},
+                    {"type": "ActivityRegularization", "l1": 1e-5, "l2": 1e-5, "name": "ar1"},
+                    {"type": "Dense", "units": 8, "activation": "relu", "name": "d1"},
+                ],
+                "output_feature_map_name": "feat_main",
+            }
+        ],
+        [{"output_layer_name": "out_main", "source_feature_map": "feat_main", "units": 3}],
+    )
+
+
 def _case_unsupported_layer() -> dict[str, Any]:
     return _base_model(
         "case_unsupported",
@@ -552,6 +573,7 @@ def main() -> None:
         ("merge_concat", _case_merge_concat(), False),
         ("merge_add", _case_merge_add(), False),
         ("merge_multiply", _case_merge_multiply(), False),
+        ("new_regularization_layers", _case_new_regularization_layers(), False),
         ("unsupported_layer", _case_unsupported_layer(), True),
         ("gru_missing_units", _case_gru_missing_units(), True),
         ("conv1d_missing_kernel_size", _case_conv1d_missing_kernel_size(), True),

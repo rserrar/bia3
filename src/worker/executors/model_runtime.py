@@ -452,6 +452,19 @@ def _apply_layer(
         rate = float(p.get("rate", 0.2) or 0.2)
         return tf.keras.layers.SpatialDropout1D(rate=rate, name=layer_name)(x)
 
+    if layer_type == "AlphaDropout":
+        rate = float(p.get("rate", 0.2) or 0.2)
+        return tf.keras.layers.AlphaDropout(rate=rate, name=layer_name)(x)
+
+    if layer_type == "GaussianDropout":
+        rate = float(p.get("rate", 0.2) or 0.2)
+        return tf.keras.layers.GaussianDropout(rate=rate, name=layer_name)(x)
+
+    if layer_type == "ActivityRegularization":
+        l1 = float(p.get("l1", 0.0) or 0.0)
+        l2 = float(p.get("l2", 0.0) or 0.0)
+        return tf.keras.layers.ActivityRegularization(l1=l1, l2=l2, name=layer_name)(x)
+
     if layer_type == "BatchNormalization":
         kwargs = _common_layer_kwargs(p)
         if layer_name is not None:

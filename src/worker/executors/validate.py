@@ -9,7 +9,8 @@ from .model_runtime import run_smoke_fit_real_data
 from ..progress import report_progress
 
 SUPPORTED_LAYER_TYPES = {
-    "Dense", "Dropout", "SpatialDropout1D", "BatchNormalization", "LayerNormalization",
+    "Dense", "Dropout", "SpatialDropout1D", "AlphaDropout", "GaussianDropout",
+    "ActivityRegularization", "BatchNormalization", "LayerNormalization",
     "Reshape", "Conv1D", "SeparableConv1D", "LSTM", "GRU", "Bidirectional",
     "TimeDistributed", "MaxPooling1D", "AveragePooling1D", "GlobalMaxPooling1D",
     "GlobalAveragePooling1D", "Flatten", "RepeatVector", "GaussianNoise", "Masking",
