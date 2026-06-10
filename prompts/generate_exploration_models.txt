@@ -93,7 +93,7 @@ El model pot usar les següents capes suportades pel runtime de la V3. Cada capa
 - `AttentionKeras`: dins capes, requereix `input_source_feature_maps` amb 2-3 tensors 3D.
 - `MultiHeadAttentionKeras`: dins capes, requereix `input_source_feature_maps` amb 1-3 tensors 3D.
 - Si uses `MultiHeadAttentionKeras`, defineix sempre `input_source_feature_maps` de manera explícita; si no tens clar query/value/key, no usis atenció i substitueix-la per `concatenate + Dense`.
-- No facis `AttentionKeras` o `MultiHeadAttentionKeras` directament sobre seqüències crues de longitud `800`; primer redueix longitud amb pooling/downsampling o treballa sobre una representació comprimida.
+- ⚠️ REGLA CRÍTICA: No posis MAI `AttentionKeras` o `MultiHeadAttentionKeras` directament sobre seqüències de longitud >128 sense reduir abans amb `MaxPooling1D`, `AveragePooling1D`, `GlobalAveragePooling1D` o `GlobalMaxPooling1D`. L'atenció sobre seqüències llargues amb batch gran causa OOM (memòria insuficient) i el worker mor.
 - `merges[]`: requereixen `source_feature_maps` amb >=2 tensors.
 - `MaxPooling1D` / `AveragePooling1D` / `GlobalMaxPooling1D` / `GlobalAveragePooling1D` / `Flatten`: reducció de dimensionalitat temporal. MaxPooling/AveragePooling redueixen amb finestra; Global* redueixen tota la seqüència a 2D; Flatten aplana a 2D.
 - `RepeatVector(n)`, `GaussianNoise(stddev)`, `Masking(mask_value)`, `Activation(funció)`, `Softmax(axis)`, `ReLU(max_value?)`, `LeakyReLU(alpha)`, `PReLU`, `ELU(alpha)`: activacions i transformacions diverses.

@@ -18,7 +18,7 @@ SUPPORTED_LAYER_TYPES = {
     "Add", "Multiply", "Concatenate", "AttentionKeras", "MultiHeadAttentionKeras",
 }
 
-ATTENTION_MAX_RAW_SEQUENCE_LEN = 512
+ATTENTION_MAX_RAW_SEQUENCE_LEN = 128
 
 
 def _as_dict(value: Any) -> dict[str, Any]:

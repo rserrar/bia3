@@ -65,6 +65,7 @@ El model pot usar les següents capes suportades pel runtime de la V3. Cada capa
 - `Bidirectional`: requereix `wrapped_layer` o `inner_layer` amb `LSTM` o `GRU`.
 - `TimeDistributed`: requereix `wrapped_layer` o `inner_layer` (ex: `Dense`).
 - `AttentionKeras` / `MultiHeadAttentionKeras`: requereixen tensors de rank >=3.
+- ⚠️ REGLA CRÍTICA: No posis MAI `AttentionKeras` o `MultiHeadAttentionKeras` directament sobre seqüències de longitud >128 sense reduir abans amb pooling.
 - `Add` / `Multiply` / `Concatenate` dins `branches[].layers[]` o `merges[].layers_after_merge[]`: requereixen `input_source_feature_maps` amb >=2 tensors.
 - `merges[]`: requereixen `source_feature_maps` amb >=2 tensors.
 - `MaxPooling1D` / `AveragePooling1D` / `GlobalMaxPooling1D` / `GlobalAveragePooling1D` / `Flatten`: reducció temporal.

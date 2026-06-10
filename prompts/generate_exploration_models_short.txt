@@ -39,6 +39,7 @@ architecture_guide_content: {{architecture_guide_content}}
   - **Activacions:** `Activation`, `Softmax`, `ReLU`, `LeakyReLU`, `PReLU`, `ELU`.
   - **Manipulació de shapes:** `Reshape`(target_shape), `RepeatVector`(n), `LambdaSlice`(slice_params), `Masking`.
   - **Fusió:** `Add`, `Multiply`, `Concatenate` (dins capes usen `input_source_feature_maps`; dins merges usen `source_feature_maps`).
+- ⚠️ REGLA CRÍTICA: No posis MAI `AttentionKeras` o `MultiHeadAttentionKeras` sobre seqüències >128 sense reduir abans amb pooling (MaxPooling1D, AveragePooling1D, GlobalPooling...). L'atenció en seqüències llargues + batch gran = OOM (worker mort).
 - Tria la capa segons la hipotesi arquitectonica; no assumeixis que una pila `Dense` es l'opcio per defecte.
 - Consulta `architecture_guide_content` per exemples funcionals de capes no denses i combinacions multi-branca.
 - Exemples incorrectes / prohibits: `Subtract`, `ModulatedFusion`, `CrossAttention`, `ResidualBlock`.
