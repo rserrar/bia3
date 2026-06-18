@@ -56,7 +56,7 @@ def _execute_task_in_subprocess(task: dict[str, Any], result_file_path: str) -> 
         if task_id == "":
             return
         try:
-            client = WorkerApiClient(settings.api_base_url, settings.api_token)
+            client = WorkerApiClient(settings.api_base_url)
             client.progress(task_id, {"worker_id": settings.worker_id, "progress": progress})
         except Exception as error:
             print(f"[WARN] Progress failed task_id={task_id}: {error}", flush=True)
