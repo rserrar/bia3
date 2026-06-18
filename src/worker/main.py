@@ -15,6 +15,7 @@ from .executors.train_continue import execute_train_continue
 from .executors.recommend_train_continue import execute_recommend_train_continue
 from .executors.summarize_conversation import execute_summarize_conversation
 from .client import WorkerApiClient
+from .progress import clear_reporter, set_reporter
 from src.shared.settings import load_settings
 
 
@@ -48,7 +49,20 @@ def execute_task(task: dict[str, Any]) -> dict[str, Any]:
 
 def _execute_task_in_subprocess(task: dict[str, Any], result_file_path: str) -> None:
     payload: dict[str, Any]
+    task_id = str(task.get("task_id", "")).strip()
+    settings = load_settings()
+
+    def _progress_reporter(progress: dict[str, Any]) -> None:
+        if task_id == "":
+            return
+        try:
+            client = WorkerApiClient(settings.api_base_url, settings.api_token)
+            client.progress(task_id, {"worker_id": settings.worker_id, "progress": progress})
+        except Exception as error:
+            print(f"[WARN] Progress failed task_id={task_id}: {error}", flush=True)
+
     try:
+        set_reporter(_progress_reporter)
         payload = {"ok": True, "result": execute_task(task)}
     except Exception as error:
         tb = traceback.format_exc()
@@ -62,6 +76,8 @@ def _execute_task_in_subprocess(task: dict[str, Any], result_file_path: str) -> 
                 "retryable": True,
             },
         }
+    finally:
+        clear_reporter()
 
     try:
         with open(result_file_path, "w", encoding="utf-8") as handle:
